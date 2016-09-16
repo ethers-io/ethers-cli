@@ -8,8 +8,7 @@ var fs = require('fs');
 var readlineSync = require('readline-sync');
 var Wallet = require('ethers-wallet');
 
-var signing = require('../lib/signing.js');
-var Slug = require('../lib/slug.js');
+var Slug = require('../index.js').Slug;
 var utils = require('../lib/utils.js');
 var version = require('../package.json').version;
 
