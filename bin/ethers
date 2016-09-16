@@ -8,10 +8,10 @@ var fs = require('fs');
 var readlineSync = require('readline-sync');
 var Wallet = require('ethers-wallet');
 
-var signing = require('./lib/signing.js');
-var Slug = require('./lib/slug.js');
-var utils = require('./lib/utils.js');
-var version = require('./package.json').version;
+var signing = require('../lib/signing.js');
+var Slug = require('../lib/slug.js');
+var utils = require('../lib/utils.js');
+var version = require('../package.json').version;
 
 // The command being run (eg. init)
 var command = '';

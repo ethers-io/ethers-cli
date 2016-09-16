@@ -6,6 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "bin": {
+    "ethers": "./bin/ethers"
+  },
   "dependencies": {
     "ethers-wallet": "1.0.4",
     "git-command": "1.0.11",
