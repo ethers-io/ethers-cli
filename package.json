@@ -7,8 +7,12 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "git": "0.1.5",
-    "git-command": "1.0.11"
+    "ethers-wallet": "1.0.4",
+    "git-command": "1.0.11",
+    "readline-sync": "1.4.4"
+  },
+  "devDependencies": {
+    "nodeunit": "0.9.1"
   },
   "keywords": [
     "ethers",
