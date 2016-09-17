@@ -10,9 +10,11 @@
     "ethers": "./bin/ethers"
   },
   "dependencies": {
+    "aws-sdk": "2.6.3",
     "ethers-wallet": "1.0.4",
     "git-command": "1.0.11",
-    "readline-sync": "1.4.4"
+    "readline-sync": "1.4.4",
+    "mime-types": "2.1.11"
   },
   "devDependencies": {
     "nodeunit": "0.9.1"
