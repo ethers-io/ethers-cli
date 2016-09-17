@@ -18,15 +18,16 @@ function showHelp(error) {
     console.log('Command Line Interface - ethers.space/' + version);
     console.log('');
     console.log('Usage');
-    console.log('    node server.js [--help | --version | [ [--port PORT]');
-    console.log('                  [--cache-ttl TTL] [--cache-size SIZE] ]');
+    console.log('    node server.js [--help | --version | OPTIONS ]');
     console.log('');
-    console.log('        --help');
-    console.log('        --version');
+    console.log('        --help                 show this help file');
+    console.log('        --version              show the software version');
     console.log('');
-    console.log('        --cache-ttl');
-    console.log('        --cache-size');
-    console.log('        --port');
+    console.log('    Options:');
+    console.log('        --aws-config CONFIG    configuration fo AWS (JSON) [credentials.json]');
+    console.log('        --cache-ttl TTL        seconds to cache slugs from S3 [60]');
+    console.log('        --cache-size SIZE      max number of slugs to cache from S3 [10]');
+    console.log('        --port PORT            port to listen on [8000]');
     console.log('');
 
     if (error && error.message !== '') {
@@ -218,6 +219,7 @@ var server = http.createServer(function(request, response) {
                 response.end();
             }
         }, function(error) {
+            console.log(error);
             response.writeHead(500, 'Server Error', {});
             response.end();
         });
