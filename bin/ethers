@@ -5,6 +5,7 @@
 var crypto = require('crypto');
 var fs = require('fs');
 
+var Git = require('git-command');
 var readlineSync = require('readline-sync');
 var Wallet = require('ethers-wallet');
 
@@ -69,7 +70,7 @@ try {
     if (opts.flags.help) { throw new Error(''); }
 
     if (opts.flags.version) {
-        console.log('ethers.space/' + version);
+        console.log('ethers/' + version);
         process.exit();
     }
 
@@ -92,6 +93,8 @@ try {
 
     // Various checks for the command
     switch (command) {
+        case 'status':
+        case 'prepare':
         case 'init':
             ensureArgs(0);
             break;
@@ -109,6 +112,40 @@ try {
 }
 
 switch (command) {
+    case 'status':
+        if (jsonAccount) {
+            console.log('URL: ' + JSON.parse(jsonAccount).address.toLowerCase() + '.ethers.space');
+            /* @TODO: We don't want to compare against just git, we want to compare
+                      against what is currently deployed
+
+            var git = new Git();
+            git.status().then(function(result) {
+                var filenames = {};
+                var actionOverrides = {created: 'added'};
+                ['created', 'modified'].forEach(function(action) {
+                    if (result[action] && result[action].length) {
+                        result[action].forEach(function(filename) {
+                            filenames[filename] = actionOverrides[action] || action;
+                        });
+                    }
+                });
+                console.log(filenames);
+                if (result.notAdded && result.notAdded.length) {
+                    console.log('Untracked files:\n  (use "git add <file>..." to include in what will be committed)\n');
+                    result.notAdded.forEach(function(filename) {
+                        console.log('\t' + filename);
+                    });
+                }
+            }, function(error) {
+                console.log('Error', error);
+            })
+            */
+        } else {
+            console.log('No ethers.space account found (Use `ethers init`)');
+        }
+        
+        break;
+
     case 'init':
         if (jsonAccount) {
             console.log('Cannot `init`. Account already exists (account.json).');
@@ -144,6 +181,25 @@ switch (command) {
         })();
         break;
 
+    case 'prepare':
+        getAccount().then(function(wallet) {
+            console.log('Finding files...');
+            Slug.generate().then(function(slug) {
+                var payload = slug.sign(wallet.privateKey);
+                fs.writeFileSync(wallet.address + '.slug', payload);
+            }, function(error) {
+                console.log('Error preparing slug: ' + error.message);
+            });
+
+        }, function(error) {
+            if (error.message === 'invalid password') {
+                console.log('Error: Invalid password');
+            } else {
+                console.log('Error decrypting account: ' + error.message);
+            }
+        });
+        break;
+    
     case 'push':
         if (!jsonAccount) {
             console.log('Command `push` requires an account (use `ethers init` first.)');
