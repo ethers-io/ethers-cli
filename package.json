@@ -10,8 +10,12 @@
     "ethers": "./bin/ethers"
   },
   "dependencies": {
+    "abs": "1.3.6",
     "ethers-wallet": "1.0.4",
     "git-command": "1.0.11",
+    "mime-types": "2.1.11",
+    "opn": "4.0.2",
+    "pem": "1.8.3",
     "readline-sync": "1.4.4"
   },
   "devDependencies": {

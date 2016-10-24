@@ -4,11 +4,18 @@
 
 var crypto = require('crypto');
 var fs = require('fs');
+var https = require('https');
+var mimeTypes = require('mime-types');
+var opn = require('opn');
+var pem = require('pem');
+var urlParse = require('url').parse;
 
 var Git = require('git-command');
+var GitRunner = require('../node_modules/git-command/src/runner.js');
 var readlineSync = require('readline-sync');
 var Wallet = require('ethers-wallet');
 
+var api = require('../lib/api.js');
 var Slug = require('../index.js').Slug;
 var utils = require('../lib/utils.js');
 var version = require('../package.json').version;
@@ -39,28 +46,36 @@ function showHelp(error) {
     console.log('');
     console.log('Command Line Interface - ethers/' + version);
     console.log('');
+// remote, slug.SLUG, staged
     console.log('Usage:');
     console.log('    ethers init');
-    console.log('    //ethers status');
-    console.log('    //ethers push ALIAS');
+    console.log('    ethers status');
+    console.log('    ethers prepare');
+    console.log('    ethers serve [--slug SLUG] [--port PORT] [--open] [--testnet]');
+    console.log('    ethers diff [--slug SLUG] [--published]');
+    console.log('    ethers push SLUG');
+    //console.log('');
+    //console.log('    ethers lookup ALIAS [--testnet]');
+    //console.log('    ethers search KEYWORD [--testnet]');
+    //console.log('');
+    //console.log('    ethers register ALIAS [--amount ETHER] [--wait] [--testnet] **');
+    //console.log('    ethers update ALIAS [URL] [--wait] [--testnet] **');
+    //console.log('    ethers keyword ( ALIAS KEYWORD | KWID ) [--amount ETHER] [--wait] [--testnet] **');
+    //console.log('    ethers prune KWID [--wait] [--testnet] **');
     console.log('');
-    console.log('    //ethers lookup ALIAS [--testnet]');
-    console.log('    //ethers search KEYWORD [--testnet]');
-    console.log('');
-    console.log('    //ethers register ALIAS [--amount ETHER] [--wait] [--testnet] **');
-    console.log('    //ethers update ALIAS [URL] [--wait] [--testnet] **');
-    console.log('    //ethers keyword ( ALIAS KEYWORD | KWID ) [--amount ETHER] [--wait] [--testnet] **');
-    console.log('    //ethers prune KWID [--wait] [--testnet] **');
-    console.log('');
+
     console.log('    Options:');
-    console.log('    //    --password-file   no password prompt; read from file **');
+    //console.log('        --password-file   no password prompt; read from file **');
     console.log('        --help            show this help screen');
     console.log('        --version         show the software version');
-    console.log('    //    --testnet         use the morden testnet');
+    console.log('        --testnet         use the morden testnet');
     console.log('');
+
     console.log('    Commands:');
     console.log('        init       creates a new account.json');
     console.log('        push       creates and deploys a slug to ethers.space');
+    console.log('        prepare    create a slug file for the project account');
+    console.log('        serve      locally host and debug apps');
     console.log('        status     show status of package');
 //    console.log('        link       update the link in the Alias Registry');
 //    console.log('        keyword    add a keyword to the Alias Registry');
@@ -68,9 +83,9 @@ function showHelp(error) {
 //    console.log('        search     show the current Aliases for a keyword');
 //    console.log('        prune      remove an expired keyword from the keywords');
 //    console.log('        renew      extend the expiration of an Alias');
-    console.log('');
-    console.log('** Note: These commands require funds (i.e. ether) to execute as');
-    console.log('         they update the Ethereum blockchain state.');
+//    console.log('');
+//    console.log('** Note: These commands require funds (i.e. ether) to execute as');
+//    console.log('         they update the Ethereum blockchain state.');
     console.log('');
 
     if (error.message !== '') {
@@ -82,10 +97,43 @@ function showHelp(error) {
     process.exit();
 }
 
+function gitStatus() {
+    var git = new Git('.');
+
+    return new Promise(function(resolve, reject) {
+        git.status().then(function(result) {
+            var status = {};
+            for (var type in result) {
+                result[type].forEach(function(filename) {
+                    status[filename] = type;
+                });
+            }
+            resolve(status);
+        }, function(error) {
+            reject(error);
+        });
+    });
+}
+
+function gitDiff(a, b, path) {
+    return new Promise(function(resolve, reject) {
+        if (path) { GitRunner.baseDir = path; }
+        console.log('git diff ' + a + ' ' + b);
+        GitRunner.execute(['git', 'diff', a, b], function(result) {
+            resolve(result);
+        });
+    });
+}
+
 try {
     var opts = utils.getopts({
+        port: 0,
+        slug: [],
     }, {
         help: false,
+        open: false,
+        published: false,
+        testnet: false,
         version: false,
     });
 
@@ -99,9 +147,9 @@ try {
     if (opts.args.length === 0) { throw new Error('No command specified.'); }
     command = opts.args.shift();
 
-    function ensureArgs(count) {
+    function ensureArgCount(count) {
         if (opts.args.length !== count) {
-            throw new Error('Invalid arguments for `' + command + '`.');
+            throw new Error('ethers ' + command + ': invalid arguments "' + opts.args.join('", "') + '"');
         }
     }
 
@@ -118,15 +166,44 @@ try {
         case 'status':
         case 'prepare':
         case 'init':
-            ensureArgs(0);
+        case 'push':
+            ensureArgCount(0);
             break;
 
-        case 'push':
-            ensureArgs(1);
+        case 'serve':
+            ensureArgCount(0);
+            opts.ensureInteger('port');
+            if (opts.options.slug.length > 1) {
+                throw new Error('ethers serve: may only specifiy --slug once');
+            }
+            opts.ensureFile('slug');
+            break;
+
+        case 'debug-dump':
+            if (opts.options.slug.length !== 1) {
+                throw new Error('ethers debug-dump: requires exactly one --slug');
+            }
+            opts.ensureFile('slug');
+            break;
+
+        case 'diff':
             break;
 
         default:
-            throw new Error('Unknown command: ' + command);
+            throw new Error('Unknown command: ethers ' + command);
+    }
+
+    var allowedOptions = {
+        diff: {slug: true, published: true},
+        serve: {open: true, port: true, slug: true, testnet: true},
+    };
+
+    if (allowedOptions[command]) {
+        opts.explicit.forEach(function(option) {
+            if (!allowedOptions[command][option.substring(2)]) {
+                throw new Error('Invalid option for ' + command + ': ' + option + '');
+            }
+        });
     }
 
 } catch (error) {
@@ -165,16 +242,17 @@ switch (command) {
         } else {
             console.log('No ethers.space account found (Use `ethers init`)');
         }
-        
         break;
 
     case 'init':
         if (jsonAccount) {
             console.log('Cannot `init`. Account already exists (account.json).');
             process.exit(1);
+            break;
         }
 
         (function() {
+
             // Generate a new private key
             var privateKey = '0x' + crypto.randomBytes(32).toString('hex');
             var wallet = new Wallet(privateKey);
@@ -200,12 +278,157 @@ switch (command) {
             }, function(error) {
                 console.log('Error encrypting account: ' + error.message);
             });
+
         })();
+        break;
+
+    case 'serve':
+        var respond = null;
+
+        if (opts.options.slug.length) {
+            respond = (function() {
+                var slug = Slug.verify(opts.options.slug[0]);
+                console.log('Serving content from slug://' + slug.address);
+
+                return function(path, sendResponse, sendError) {
+                    path = path.substring(1);
+                    var data = slug.getData(path);
+                    if (data) {
+                        sendResponse('slug://' + path, data);
+                    } else {
+                        sendError(404);
+                    }
+                }
+            })();
+
+        } else {
+            respond = (function() {
+                var cwd = process.cwd();
+                console.log('Serving content from file://' + cwd);
+
+                return function(path, sendResponse, sendError) {
+                    path = cwd + path;
+                    fs.realpath(path, function(error, path) {
+                        if (error) {
+                            // File not found..
+                            if (error.code === 'ENOENT') {
+                                return sendError(404);
+                            }
+
+                            // Something else?
+                            return sendError('500');
+                        }
+
+                        // Make sure we aren't following any relative paths outside
+                        if (path.substring(0, cwd.length) !== cwd) {
+                            return sendError('403');
+                        }
+
+                        // Read the file
+                        fs.readFile(path, function(error, data) {
+
+                            // Permission error
+                            if (error) {
+                                return sendError(403);
+                            }
+
+                            // Send the result
+                            sendResponse('.' + path.substring(cwd.length), data);
+                        });
+                    });
+                }
+            })();
+        }
+
+        function listener(request, response) {
+            var url = urlParse(request.url);
+            var path = url.path;
+            if (path.substring(path.length - 1) === '/') { path += 'index.html'; }
+
+            function sendResponse(path, data) {
+                var headers = {
+                    'content-length': String(data.length),
+                    'server': 'ethers-cli/' + version,
+                    'connection': 'close',
+                };
+                var filename = path.split('/');
+                filename = filename[filename.length - 1];
+                var contentType = mimeTypes.contentType(filename);
+                if (contentType) { headers['content-type'] = contentType; }
+
+                console.log('OK: ' + request.url + ' => ' + path + ' (' + data.length + ' bytes)');
+                response.writeHead(200, 'OK', headers);
+                if (request.method === 'HEAD') {
+                    response.end()
+                } else {
+                    response.end(data)
+                }
+            }
+
+            function sendError(statusCode) {
+                console.log('Error: ' + request.url + ' (' + statusCode + ')');
+                response.writeHead(statusCode);
+                response.end();
+            }
+
+            respond(path, sendResponse, sendError);
+        }
+
+        function serve(keys) {
+            try {
+                var server = https.createServer({
+                    key: keys.serviceKey,
+                    cert: keys.certificate
+                }, listener);
+
+                server.listen(opts.options.port, '127.0.0.1', function() {
+                    var port = server.address().port
+
+                    var url = '/#!/app-link/localhost:' + port + '/';
+                    if (opts.flags.testnet) {
+                        url = 'https://testnet.ethers.io' + url;
+                    } else {
+                        url = 'https://ethers.io' + url;
+                    }
+
+                    console.log('Listening on port: ' + port);
+                    console.log('Open in your browser: ' + url);
+                    console.log('(Please make sure you allow the self-signed certificate, if prompted)');
+
+                    if (opts.flags.open) {
+                        opn(url);
+                    }
+                });
+            } catch (error) {
+                console.log(error);
+            }
+        }
+
+        try {
+            var keys = JSON.parse(fs.readFileSync('.ethers-self-signed.pem'))
+            console.log('Found self-signed certificate. (.ethers-self-signed.pem)');
+            serve(keys);
+
+        } catch (error) {
+            console.log('Generating new self-signed certificate. (.ethers-self-signed.pem)');
+            pem.createCertificate({
+                days: 365,
+                selfSigned: true,
+            }, function(error, keys) {
+                if (error) {
+                    console.log(error);
+                    return;
+                }
+                fs.writeFileSync('.ethers-self-signed.pem', JSON.stringify(keys), {flag: 'wx'});
+                serve(keys);
+            });
+        }
         break;
 
     case 'prepare':
         getAccount().then(function(wallet) {
             console.log('Finding files...');
+
             Slug.generate().then(function(slug) {
                 var payload = slug.sign(wallet.privateKey);
                 fs.writeFileSync(wallet.address + '.slug', payload);
@@ -221,7 +444,84 @@ switch (command) {
             }
         });
         break;
-    
+
+    case 'diff':
+        // diff => diff between published:hash filename
+        // diff --slug SLUG => diff between slug:hash filename
+        // diff --slug SLUG --live => diff between published:hash slug:filename
+        // diff --slug SLUG --slug SLUG => diff between slug:hash slug:filename
+        (function() {
+            function diff(filename) {
+                console.log(filename);
+                /*
+                gitDiff(opts.args[0], opts.args[1]).then(function(result) {
+                    console.log(result);
+                });
+                */
+            }
+
+            function getLiveHashes() {
+                var hashes = {};
+
+                function readFile(filename) {
+                    return new Promise(function(resolve, reject) {
+                        fs.readFile(filename, function(error, data) {
+                            if (error) {
+                                return reject(error);
+                            }
+                            hashes[filename] = utils.getGitHash(data);
+                            resolve();
+                        });
+                    });
+                }
+
+                return new Promise(function(resolve, reject) {
+                    gitStatus().then(function(results) {
+                        var readFiles = [];
+
+                        var untracked = [];
+                        for (var filename in results) {
+                            if (results[filename] === 'notAdded') {
+                                untracked.push(filename);
+                                continue;
+                            }
+                            readFiles.push(readFile(filename));
+                        }
+
+                        Promise.all(readFiles).then(function(result) {
+                            if (untracked.length) {
+                                console.log('WARNING! Untracked Files:');
+                                untracked.forEach(function(filename) {
+                                    console.log('    '  + filename);
+                                });
+                            }
+                            resolve(hashes);
+                        }, function(error) {
+                            reject(error);
+                        });
+
+                    }, function(error) {
+                        console.log(error);
+                        reject(error);
+                    });
+                });
+            }
+
+            getLiveHashes().then(function(result) {
+                console.log(result);
+            }, function(error) {
+                console.log(error);
+            });
+
+            // Diff all files that have changed against the published
+            if (opts.args.length === 0) {
+
+            // Diff all listed files
+            } else {
+            }
+        })();
+        break;
+
     case 'push':
         if (!jsonAccount) {
             console.log('Command `push` requires an account (use `ethers init` first.)');
@@ -233,7 +533,12 @@ switch (command) {
 
             console.log('Finding files...');
             Slug.generate().then(function(slug) {
-                var payload = slug.sign(wallet.privateKey);
+                var signedSlug = slug.sign(wallet.privateKey);
+                api.putSlug(alias, signedSlug).then(function(result) {
+                    console.log(result);
+                }, function(error) {
+                    console.log(error);
+                });;
 
                 // Send payload and alias to server for deployment
                 /*
@@ -252,6 +557,15 @@ switch (command) {
             }
         });
 
+        break;
+
+    case 'debug-dump':
+        (function() {
+            var slug = Slug.verify(opts.options.slug[0]);
+            slug.filenames.forEach(function(filename) {
+                console.log(filename + '\n    length:  ' + slug.getData(filename).length + ' bytes\n    sha256:  ' + slug.getHash(filename) + '\n    gitSha1: ' + slug.getGitHash(filename));
+            });
+        })();
         break;
 }
 /**
