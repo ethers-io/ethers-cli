@@ -4,21 +4,21 @@
 
 var crypto = require('crypto');
 var fs = require('fs');
-var https = require('https');
-var mimeTypes = require('mime-types');
-var opn = require('opn');
-var pem = require('pem');
+var http = require('http');
+var path = require('path');
 var urlParse = require('url').parse;
 
-var Git = require('git-command');
-var GitRunner = require('../node_modules/git-command/src/runner.js');
+var ethers = require('ethers');
 var readlineSync = require('readline-sync');
-var Wallet = require('ethers-wallet');
+
 
 var api = require('../lib/api.js');
+var Git = require('../lib/git.js');
 var Slug = require('../index.js').Slug;
 var utils = require('../lib/utils.js');
 var version = require('../package.json').version;
+var WebServer = require('../lib/webserver');
+
 
 // The command being run (eg. init)
 var command = '';
@@ -39,22 +39,22 @@ function getPassword(message) {
 
 function getAccount() {
     var password = getPassword();
-    return Wallet.decrypt(jsonAccount, password);
+    return ethers.Wallet.fromEncryptedWallet(jsonAccount, password);
 }
 
 function showHelp(error) {
     console.log('');
     console.log('Command Line Interface - ethers/' + version);
     console.log('');
-// remote, slug.SLUG, staged
     console.log('Usage:');
     console.log('    ethers init');
-    console.log('    ethers status');
-    console.log('    ethers prepare');
-    console.log('    ethers serve [--slug SLUG] [--port PORT] [--open] [--testnet]');
-    console.log('    ethers diff [--slug SLUG] [--published]');
-    console.log('    ethers push SLUG');
+    console.log('    ethers status [--head] [--slug SLUG1] [--slug SLUG2] [--published]');
+    console.log('    ethers diff [--head] [--slug SLUG1] [--slug SLUG2] [--published]');
+    console.log('    ethers prepare [--signed]');
+    console.log('    ethers serve [--slug SLUG] [--port PORT] [--testnet]');
+    console.log('    ethers push --slug SLUG');
     //console.log('');
+    //console.log('    ethers dump-template');
     //console.log('    ethers lookup ALIAS [--testnet]');
     //console.log('    ethers search KEYWORD [--testnet]');
     //console.log('');
@@ -73,10 +73,11 @@ function showHelp(error) {
 
     console.log('    Commands:');
     console.log('        init       creates a new account.json');
-    console.log('        push       creates and deploys a slug to ethers.space');
-    console.log('        prepare    create a slug file for the project account');
-    console.log('        serve      locally host and debug apps');
     console.log('        status     show status of package');
+    console.log('        prepare    create a pre-packaged slug');
+    console.log('        serve      locally host the app and browser');
+    console.log('        push       deploys a slug to ethers.space');
+
 //    console.log('        link       update the link in the Alias Registry');
 //    console.log('        keyword    add a keyword to the Alias Registry');
 //    console.log('        lookup     show the current URL for an Alias');
@@ -96,7 +97,7 @@ function showHelp(error) {
 
     process.exit();
 }
-
+/*
 function gitStatus() {
     var git = new Git('.');
 
@@ -124,16 +125,22 @@ function gitDiff(a, b, path) {
         });
     });
 }
+*/
 
+// Validate all the command line options
 try {
+
+    // Parse the arguments (with these as the defaults)
     var opts = utils.getopts({
-        port: 0,
+        port: 8080,
         slug: [],
     }, {
+        head: false,
         help: false,
         open: false,
         published: false,
         testnet: false,
+        signed: false,
         version: false,
     });
 
@@ -156,18 +163,51 @@ try {
     // Load any existing account JSON
     try {
         jsonAccount = fs.readFileSync('./account.json');
-        if (!Wallet.isValidWallet(jsonAccount)) {
+        if (!ethers.Wallet.isValidWallet(jsonAccount)) {
             console.log('WARNING: invalid account.json format');
         }
     } catch (error) { }
 
     // Various checks for the command
     switch (command) {
-        case 'status':
-        case 'prepare':
+
         case 'init':
+            ensureArgCount(0);
+            break;
+
+        case 'dump-template':
+            ensureArgCount(0);
+            break;
+
+        case 'status':
+            ensureArgCount(0);
+            if (opts.options.published && !jsonAccount) {
+                throw new Error('ethers status: --published requires an account (use ethers init)');
+            }
+            (function() {
+                var count = opts.options.slug.length;
+                if (opts.options.head) { count++; }
+                if (opts.options.published) { count++; }
+                if (count > 2) {
+                    throw new Error('ethers status: too many sources');
+                }
+                if (count === 0 && !jsonAccount) {
+                    throw new Error('ethers status: implicit --published requires an account (use ethers init)');
+                }
+            })();
+            opts.ensureFile('slug');
+            break;
+
+        case 'prepare':
+            ensureArgCount(0);
+            break;
+
         case 'push':
             ensureArgCount(0);
+            if (opts.options.slug.length !== 1) {
+                throw new Error('ethers push: requires exactly one --slug');
+            }
+            opts.ensureFile('slug');
             break;
 
         case 'serve':
@@ -187,6 +227,21 @@ try {
             break;
 
         case 'diff':
+            if (opts.options.published && !jsonAccount) {
+                throw new Error('ethers diff: --published requires an account (use ethers init)');
+            }
+            (function() {
+                var count = opts.options.slug.length;
+                if (opts.options.head) { count++; }
+                if (opts.options.published) { count++; }
+                if (count > 2) {
+                    throw new Error('ethers diff: too many sources');
+                }
+                if (count === 0 && !jsonAccount) {
+                    throw new Error('ethers diff: implicit --published requires an account (use ethers init)');
+                }
+            })();
+            opts.ensureFile('slug');
             break;
 
         default:
@@ -194,8 +249,10 @@ try {
     }
 
     var allowedOptions = {
-        diff: {slug: true, published: true},
+        prepare: {signed: true},
+        diff: {head: true, slug: true, published: true},
         serve: {open: true, port: true, slug: true, testnet: true},
+        push: {slug: true},
     };
 
     if (allowedOptions[command]) {
@@ -210,52 +267,208 @@ try {
     showHelp(error);
 }
 
-switch (command) {
-    case 'status':
-        if (jsonAccount) {
-            console.log('URL: ' + JSON.parse(jsonAccount).address.toLowerCase() + '.ethers.space');
-            /* @TODO: We don't want to compare against just git, we want to compare
-                      against what is currently deployed
+function getSources(filenamesForStaging) {
+    var git = new Git('.');
 
-            var git = new Git();
-            git.status().then(function(result) {
-                var filenames = {};
-                var actionOverrides = {created: 'added'};
-                ['created', 'modified'].forEach(function(action) {
-                    if (result[action] && result[action].length) {
-                        result[action].forEach(function(filename) {
-                            filenames[filename] = actionOverrides[action] || action;
-                        });
+    function Source(name, versions) {
+        this.name = name;
+        this.versions = versions;
+    }
+
+    function getHashes(filenames) {
+        return new Promise(function(resolve, reject) {
+            var versions = {};
+            Object.defineProperty(versions, '_useFilename', {
+                enumerable: false,
+                value: true
+            });
+
+            var getHashes = [];
+            filenames.forEach(function(filename) {
+                getHashes.push(new Promise(function(resolve, reject) {
+                    fs.readFile(filename, function(error, data) {
+                        if (error) {
+                            reject(error);
+                            return;
+                        }
+                        versions[filename] = utils.getGitHash(data);
+                        resolve();
+                    });
+                }));
+            });
+
+            Promise.all(getHashes).then(function() {
+                resolve(versions);
+            }, function(error) {
+                reject(error);
+            });
+        });
+    }
+
+    function getStaging() {
+        return Promise.all([
+            git.status(),
+            git.listTree(),
+        ]).then(function(result) {
+            var status = result[0];
+            var listTree = Object.keys(result[1]);
+
+            var versions = {};
+            (status.notAdded || []).forEach(function(filename) {
+                versions[filename] = null;
+            });
+
+            var filenames = {};
+            listTree.forEach(function(filename) {
+                filenames[filename] = true;
+            });
+            ['created', 'deleted', 'modified'].forEach(function(tag) {
+                (status[tag] || []).forEach(function(filename) {
+                    filenames[filename] = true;
+                });
+            });
+            filenames = Object.keys(filenames);
+
+            return getHashes(filenames).then(function(result) {
+                for (var key in result) {
+                    versions[key] = result[key];
+                }
+                return new Source('staging', versions);
+            });
+        });
+    }
+
+    function getSlugVersions(slugJSON) {
+        try {
+            var slug = Slug.load(slugJSON);
+            var versions = {};
+            slug.filenames.forEach(function(filename) {
+                versions[filename] = slug.getGitHash(filename);
+            });
+            return Promise.resolve(new Source('slug', versions));
+        } catch (error) {
+            return Promise.reject(error);
+        }
+    }
+
+    function publishedVersions(address) {
+        return api.getSlugVersions(address).then(function(versions) {
+            return new Source('published', versions);
+        });
+    }
+
+    var sources = [];
+
+    opts.options.slug.forEach(function(slugJSON) {
+        sources.push(getSlugVersions(slugJSON));
+    });
+
+    if (opts.flags.head) {
+        var getHead = git.listTree().then(function(versions) {
+            return new Source('head', versions);
+        });
+        sources.push(getHead);
+    }
+
+    if (jsonAccount) {
+        var address = JSON.parse(jsonAccount).address;
+
+        if (sources.length === 0) {
+            sources.push(publishedVersions(address));
+            sources.push(getStaging());
+        } else if (opts.flags.published) {
+            sources.unshift(publishedVersions(address));
+        }
+    }
+
+    if (sources.length === 0) {
+        return Promise.reject(new Error('shold not get here'));
+
+    } else if (sources.length === 1) {
+        sources.push(getStaging());
+    }
+
+    return Promise.all(sources);
+}
+
+switch (command) {
+
+    case 'status':
+        (function() {
+            if (jsonAccount) {
+                var address = JSON.parse(jsonAccount).address;
+
+                console.log('Address: ' + address);
+                console.log('URL:     https://' + address.toLowerCase() + '.ethers.space');
+
+            } else {
+                console.log('No ethers.space account found (Use `ethers init`)');
+            }
+
+            getSources().then(function(sources) {
+                var allFilenames = {};
+                sources.forEach(function(source) {
+                    for (var filename in source.versions) {
+                        allFilenames[filename] = true;
                     }
                 });
-                console.log(filenames);
-                if (result.notAdded && result.notAdded.length) {
-                    console.log('Untracked files:\n  (use "git add <file>..." to include in what will be committed)\n');
-                    result.notAdded.forEach(function(filename) {
-                        console.log('\t' + filename);
+                allFilenames = Object.keys(allFilenames);
+                allFilenames.sort();
+
+                var changes = [];
+                var untracked = [];
+
+                allFilenames.forEach(function(filename) {
+                    var hashFrom = sources[0].versions[filename];
+                    var hashTo = sources[1].versions[filename];
+
+                    if (!hashFrom && !hashTo) {
+                        untracked.push(filename);
+
+                    } else if (!hashFrom && hashTo) {
+                        changes.push({filename: filename, action: 'added      '});
+
+                    } else if (hashFrom && !hashTo) {
+                        changes.push({filename: filename, action: 'removed:   '});
+
+                    } else if (hashFrom !== hashTo) {
+                        changes.push({filename: filename, action: 'modified:  '});
+                    }
+                });
+
+                if (changes.length) {
+                    console.log('File Status:');
+                    changes.forEach(function(change) {
+                    console.log('    ' + change.action + change.filename);
+                    });
+                } else {
+                    console.log('No files changed.');
+                }
+
+                if (untracked.length) {
+                    console.log('Untracked Files:');
+                    untracked.forEach(function(filename) {
+                        console.log('    ' + filename);
                     });
                 }
-            }, function(error) {
-                console.log('Error', error);
-            })
-            */
-        } else {
-            console.log('No ethers.space account found (Use `ethers init`)');
-        }
+
+            }).catch(function(error) {
+                console.log(error);
+            });
+        })();
         break;
 
     case 'init':
-        if (jsonAccount) {
-            console.log('Cannot `init`. Account already exists (account.json).');
-            process.exit(1);
-            break;
-        }
-
         (function() {
+            if (jsonAccount) {
+                console.log('Cannot `init`. Account already exists (account.json).');
+                process.exit(1);
+                return;
+            }
 
             // Generate a new private key
             var privateKey = '0x' + crypto.randomBytes(32).toString('hex');
-            var wallet = new Wallet(privateKey);
+            var wallet = new ethers.Wallet(privateKey);
 
             // Get a password from the user
             console.log('Do NOT lose or forget this password. It cannot be reset.');
@@ -282,69 +495,71 @@ switch (command) {
         })();
         break;
 
+    case 'dump-template':
+        (function() {
+            var template = fs.readFileSync(path.join(__dirname, '../static/template.html')).toString();
+            console.log(template);
+        })();
+        break;
+
     case 'serve':
+        (function() {
+
+            var ethersHtml = fs.readFileSync(path.join(__dirname, '../static/index.html')).toString();
+
+            var handler = null;
+            if (opts.options.slug.length) {
+                handler = (function() {
+                    var slug = Slug.verify(opts.options.slug[0]);
+                    console.log('Serving content from slug://' + slug.address);
+
+                    return function(path) {
+                        path = path.substring(1);
+                        var data = slug.getData(path);
+                        if (data) {
+                            resolve({
+                                path: 'slug://' + path,
+                                body: data
+                            });
+                        } else {
+                           reject(WebServer.makeError(404, 'Not Found'));
+                        }
+                    }
+                });
+
+            } else {
+                handler = WebServer.staticFileHandler();
+            }
+
+            var webServer = new WebServer(handler, {port: opts.options.port});
+
+            if (opts.flags.testnet) {
+                ethersHtml = ethersHtml.replace(/<ETHERS_NETWORK>/g, 'testnet')
+            } else {
+                ethersHtml = ethersHtml.replace(/<ETHERS_NETWORK>/g, 'mainnet')
+            }
+
+            webServer.addOverride('/account.json', WebServer.makeError(403, 'Forbidden'));
+            webServer.addOverride('/test', 'foo');
+            webServer.addOverride('/_/index.html', ethersHtml);
+
+            webServer.start(function() {
+                var url = 'http://localhost:' + webServer.port + '/_/#!/app-link-insecure/localhost:' + webServer.port + '/';
+                console.log('Listening on port: ' + webServer.port);
+                console.log('Server Ethers app: ' + url);
+            });
+        })();
+        /*
         var respond = null;
 
-        if (opts.options.slug.length) {
-            respond = (function() {
-                var slug = Slug.verify(opts.options.slug[0]);
-                console.log('Serving content from slug://' + slug.address);
+        var ethersApp = utils.fetchUrl('https://ethers.io/');
 
-                return function(path, sendResponse, sendError) {
-                    path = path.substring(1);
-                    var data = slug.getData(path);
-                    if (data) {
-                        sendResponse('slug://' + path, data);
-                    } else {
-                        sendError(404);
-                    }
-                }
-            })();
 
-        } else {
-            respond = (function() {
-                var cwd = process.cwd();
-                console.log('Serving content from file://' + cwd);
-
-                return function(path, sendResponse, sendError) {
-                    path = cwd + path;
-                    fs.realpath(path, function(error, path) {
-                        if (error) {
-                            // File not found..
-                            if (error.code === 'ENOENT') {
-                                return sendError(404);
-                            }
-
-                            // Something else?
-                            return sendError('500');
-                        }
-
-                        // Make sure we aren't following any relative paths outside
-                        if (path.substring(0, cwd.length) !== cwd) {
-                            return sendError('403');
-                        }
-
-                        // Read the file
-                        fs.readFile(path, function(error, data) {
-
-                            // Permission error
-                            if (error) {
-                                return sendError(403);
-                            }
-
-                            // Send the result
-                            sendResponse('.' + path.substring(cwd.length), data);
-                        });
-                    });
-                }
-            })();
-        }
 
         function listener(request, response) {
             var url = urlParse(request.url);
             var path = url.path;
             if (path.substring(path.length - 1) === '/') { path += 'index.html'; }
-
             function sendResponse(path, data) {
                 var headers = {
                     'content-length': String(data.length),
@@ -374,36 +589,42 @@ switch (command) {
             respond(path, sendResponse, sendError);
         }
 
-        function serve(keys) {
+        //function serve(keys) {
             try {
-                var server = https.createServer({
+                var server = http.createServer(/*{
                     key: keys.serviceKey,
                     cert: keys.certificate
-                }, listener);
+                },*/ 
+                /*listener);
 
                 server.listen(opts.options.port, '127.0.0.1', function() {
                     var port = server.address().port
 
-                    var url = '/#!/app-link/localhost:' + port + '/';
+                    var url = ('http:/' + '/localhost:' + port +
+                               '/.ethers.app/' + (opts.flags.testnet ? 'testnet': 'mainnet') +
+                               '/#!/app-link-insecure/localhost:' + port + '/');
+*/
+                    /*
                     if (opts.flags.testnet) {
                         url = 'https://testnet.ethers.io' + url;
                     } else {
                         url = 'https://ethers.io' + url;
                     }
-
+                    */
+/*
                     console.log('Listening on port: ' + port);
                     console.log('Open in your browser: ' + url);
-                    console.log('(Please make sure you allow the self-signed certificate, if prompted)');
+                    //console.log('(Please make sure you allow the self-signed certificate, if prompted)');
 
-                    if (opts.flags.open) {
-                        opn(url);
-                    }
+                    // Optionally open the link in a browser
+                    if (opts.flags.open) { opn(url); }
                 });
             } catch (error) {
                 console.log(error);
             }
-        }
-
+        //}
+*/
+        /*
         try {
             var keys = JSON.parse(fs.readFileSync('.ethers-self-signed.pem'))
             console.log('Found self-signed certificate. (.ethers-self-signed.pem)');
@@ -423,140 +644,117 @@ switch (command) {
                 serve(keys);
             });
         }
+        */
         break;
 
     case 'prepare':
-        getAccount().then(function(wallet) {
-            console.log('Finding files...');
+        (function() {
+            if (opts.flags.signed) {
+                getAccount().then(function(wallet) {
+                    Slug.generate().then(function(slug) {
+                        var payload = slug.sign(wallet.privateKey);
+                        fs.writeFileSync(wallet.address + '.slug', payload);
+                    }, function(error) {
+                        console.log('Error preparing slug: ' + error.message);
+                    });
 
-            Slug.generate().then(function(slug) {
-                var payload = slug.sign(wallet.privateKey);
-                fs.writeFileSync(wallet.address + '.slug', payload);
-            }, function(error) {
-                console.log('Error preparing slug: ' + error.message);
-            });
-
-        }, function(error) {
-            if (error.message === 'invalid password') {
-                console.log('Error: Invalid password');
+                }, function(error) {
+                    if (error.message === 'invalid password') {
+                        console.log('Error: Invalid password');
+                    } else {
+                        console.log('Error decrypting account: ' + error.message);
+                    }
+                });
             } else {
-                console.log('Error decrypting account: ' + error.message);
+                Slug.generate().then(function(slug) {
+                    var payload = slug.unsigned();
+                    fs.writeFileSync('unsigned.slug', payload);
+                }, function(error) {
+                    console.log('Error preparing slug: ' + error.message);
+                });
             }
-        });
+        })();
         break;
 
     case 'diff':
         // diff => diff between published:hash filename
         // diff --slug SLUG => diff between slug:hash filename
-        // diff --slug SLUG --live => diff between published:hash slug:filename
+        // diff --slug SLUG --published => diff between published:hash slug:filename
         // diff --slug SLUG --slug SLUG => diff between slug:hash slug:filename
         (function() {
-            function diff(filename) {
-                console.log(filename);
-                /*
-                gitDiff(opts.args[0], opts.args[1]).then(function(result) {
-                    console.log(result);
+            var git = new Git('.');
+
+            getSources(true).then(function(sources) {
+
+                var allFilenames = {};
+                sources.forEach(function(source) {
+                    for (var filename in source.versions) {
+                        allFilenames[filename] = true;
+                    }
                 });
-                */
-            }
+                allFilenames = Object.keys(allFilenames);
+                allFilenames.sort();
 
-            function getLiveHashes() {
-                var hashes = {};
+                allFilenames.forEach(function(filename) {
+                    var hashFrom = sources[0].versions[filename];
+                    var hashTo = sources[1].versions[filename];
+                    if (!hashFrom && !hashTo) {
 
-                function readFile(filename) {
-                    return new Promise(function(resolve, reject) {
-                        fs.readFile(filename, function(error, data) {
-                            if (error) {
-                                return reject(error);
-                            }
-                            hashes[filename] = utils.getGitHash(data);
-                            resolve();
-                        });
-                    });
-                }
+                    } else if (!hashFrom && hashTo) {
+                        console.log('Added: ' + filename);
 
-                return new Promise(function(resolve, reject) {
-                    gitStatus().then(function(results) {
-                        var readFiles = [];
+                    } else if (hashFrom && !hashTo) {
+                        console.log('Removed: ' + filename);
 
-                        var untracked = [];
-                        for (var filename in results) {
-                            if (results[filename] === 'notAdded') {
-                                untracked.push(filename);
-                                continue;
-                            }
-                            readFiles.push(readFile(filename));
+                    } else if (hashFrom !== hashTo) {
+                        if (sources[1].name === 'staging') {
+                            hashTo = filename;
                         }
 
-                        Promise.all(readFiles).then(function(result) {
-                            if (untracked.length) {
-                                console.log('WARNING! Untracked Files:');
-                                untracked.forEach(function(filename) {
-                                    console.log('    '  + filename);
-                                });
-                            }
-                            resolve(hashes);
-                        }, function(error) {
-                            reject(error);
+                        git.diff(hashFrom, hashTo).then(function(result) {
+                            console.log(result);
                         });
-
-                    }, function(error) {
-                        console.log(error);
-                        reject(error);
-                    });
+                    }
                 });
-            }
-
-            getLiveHashes().then(function(result) {
-                console.log(result);
-            }, function(error) {
-                console.log(error);
             });
-
-            // Diff all files that have changed against the published
-            if (opts.args.length === 0) {
-
-            // Diff all listed files
-            } else {
-            }
         })();
         break;
 
     case 'push':
-        if (!jsonAccount) {
-            console.log('Command `push` requires an account (use `ethers init` first.)');
-            process.exit(1);
-        }
+        (function() {
+            if (!jsonAccount) {
+                console.log('Command `push` requires an account (use `ethers init` first.)');
+                process.exit(1);
+            }
 
-        getAccount().then(function(wallet) {
-            var alias = opts.args.shift();
-
-            console.log('Finding files...');
-            Slug.generate().then(function(slug) {
-                var signedSlug = slug.sign(wallet.privateKey);
-                api.putSlug(alias, signedSlug).then(function(result) {
-                    console.log(result);
+            var slugJSON = opts.options.slug[0].toString();
+            var slug = Slug.load(slugJSON);
+console.log(slug);
+            if (slug.signed) {
+                api.putSlug('unused', slugJSON).then(function() {
+                    console.log('Successfully deployed!');
                 }, function(error) {
                     console.log(error);
-                });;
+                });
 
-                // Send payload and alias to server for deployment
-                /*
-                var slug2 = Slug.verify(payload);
-                console.log(slug2.json === slug.json);
-                */
-            }, function(error) {
-                console.log('Error deploying slug: ' + error.message);
-            });
-
-        }, function(error) {
-            if (error.message === 'invalid password') {
-                console.log('Error: Invalid password');
             } else {
-                console.log('Error decrypting account: ' + error.message);
-            }
-        });
+                getAccount().then(function(wallet) {
+                    var signedSlug = slug.sign(wallet.privateKey);
+                    api.putSlug('unused', signedSlug).then(function() {
+                        console.log('Successfully deployed!');
+                    }, function(error) {
+                        console.log(error);
+                    });;
 
+                }, function(error) {
+                    if (error.message === 'invalid password') {
+                        console.log('Error: Invalid password');
+                    } else {
+                        console.log('Error decrypting account: ' + error.message);
+                    }
+                });
+            }
+        })();
         break;
 
     case 'debug-dump':
