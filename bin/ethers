@@ -516,16 +516,18 @@ switch (command) {
                     return function(path) {
                         path = path.substring(1);
                         var data = slug.getData(path);
-                        if (data) {
-                            resolve({
-                                path: 'slug://' + path,
-                                body: data
-                            });
-                        } else {
-                           reject(WebServer.makeError(404, 'Not Found'));
-                        }
+                        return new Promise(function(resolve, reject) {
+                            if (data) {
+                                resolve({
+                                    path: 'slug://' + path,
+                                    body: data
+                                });
+                            } else {
+                               reject(WebServer.makeError(404, 'Not Found'));
+                            }
+                        });
                     }
-                });
+                })();
 
             } else {
                 handler = WebServer.staticFileHandler();
@@ -729,7 +731,7 @@ switch (command) {
 
             var slugJSON = opts.options.slug[0].toString();
             var slug = Slug.load(slugJSON);
-console.log(slug);
+
             if (slug.signed) {
                 api.putSlug('unused', slugJSON).then(function() {
                     console.log('Successfully deployed!');
