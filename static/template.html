@@ -1,5 +1,6 @@
 <html>
     <head>
+        <meta charset="UTF-8">
         <title>Your Title Here</title>
         <style type="text/css">
             html {
@@ -17,23 +18,48 @@
             }
 
             .content {
-                /* your custom style here */
             }
         </style>
+        <link rel="stylesheet" type="text/css" href="https://cdn.ethers.io/scripts/dashboard-v0.1.css">
     </head>
     <body>
         <div class="centerer">
             <div class="centered">
                 <div class="content">
-                    Hello World!
+                    Hello <span id="address">World</span>!
                 </div>
             </div>
         </div>
-        <script type="text/javascript" src="https://cdn.ethers.io/scripts/ethers-v0.2.min.js"></script>
+        <script type="text/javascript" src="https://cdn.ethers.io/scripts/ethers-app-v0.2.min.js"></script>
+        <script type="text/javascript" src="https://cdn.ethers.io/scripts/dashboard-v0.1.js"></script>
         <script type="text/javascript">
+
             ethers.onready = function() {
                 console.log('Ready!');
             };
+
+            // Update the account address
+            function updateAccount(address) {
+
+                // No address means the user has no accounts
+                if (!address) {
+                    address = 'World';
+                }
+
+                var span = document.getElementById('address');
+
+                if (span) {
+                    span.textContent = address;
+                }
+            }
+
+            // Get the current account
+            ethers.getAccount().then(function(address){
+                updateAccount(address);
+            });
+
+            // Whenever the account changes...
+            ethers.onaccount = updateAccount;
         </script>
     </body>
 </html>
