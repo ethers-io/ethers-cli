@@ -51,7 +51,7 @@ function showHelp(error) {
     console.log('    ethers status [--head] [--slug SLUG1] [--slug SLUG2] [--published]');
     console.log('    ethers diff [--head] [--slug SLUG1] [--slug SLUG2] [--published]');
     console.log('    ethers prepare [--signed]');
-    console.log('    ethers serve [--slug SLUG] [--port PORT] [--testnet]');
+    console.log('    ethers serve [--slug SLUG] [--port PORT] [--testnet] [--rpc URL]');
     console.log('    ethers push --slug SLUG');
     //console.log('');
     //console.log('    ethers dump-template');
@@ -134,6 +134,7 @@ try {
     var opts = utils.getopts({
         port: 8080,
         slug: [],
+        rpc: '',
     }, {
         head: false,
         help: false,
@@ -215,8 +216,9 @@ try {
             opts.ensureInteger('port');
             if (opts.options.slug.length > 1) {
                 throw new Error('ethers serve: may only specifiy --slug once');
+            } else if (opts.options.slug.length) {
+                opts.ensureFile('slug');
             }
-            opts.ensureFile('slug');
             break;
 
         case 'debug-dump':
@@ -251,7 +253,7 @@ try {
     var allowedOptions = {
         prepare: {signed: true},
         diff: {head: true, slug: true, published: true},
-        serve: {open: true, port: true, slug: true, testnet: true},
+        serve: {open: true, port: true, rpc: true, slug: true, testnet: true},
         push: {slug: true},
     };
 
@@ -535,7 +537,9 @@ switch (command) {
 
             var webServer = new WebServer(handler, {port: opts.options.port});
 
-            if (opts.flags.testnet) {
+            if (opts.options.rpc) {
+                ethersHtml = ethersHtml.replace(/<ETHERS_NETWORK>/g, opts.options.rpc)
+            } else if (opts.flags.testnet) {
                 ethersHtml = ethersHtml.replace(/<ETHERS_NETWORK>/g, 'testnet')
             } else {
                 ethersHtml = ethersHtml.replace(/<ETHERS_NETWORK>/g, 'mainnet')
