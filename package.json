@@ -1,24 +1,27 @@
 {
   "name": "ethers-cli",
-  "version": "1.0.3",
+  "version": "2.0.0",
   "description": "Command-Line Interface to ethers.io and ethers.space.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "./node_modules/mocha/bin/mocha --timeout 6000000 tests/test-*.js"
   },
   "bin": {
-    "ethers": "./bin/ethers"
+    "ethers": "./bin/ethers",
+    "ethers-build": "./bin/ethers-build"
   },
   "dependencies": {
     "abs": "1.3.6",
-    "ethers": "2.0.1",
+    "ethereumjs-testrpc": "4.1.3",
+    "ethereumjs-vm": "^2.2.2",
+    "ethers": "^2.1.0",
     "git-command": "1.0.11",
     "mime-types": "2.1.11",
-    "pem": "1.8.3",
-    "readline-sync": "1.4.4"
+    "readline-sync": "1.4.4",
+    "solc": "0.4.17"
   },
   "devDependencies": {
-    "nodeunit": "0.9.1"
+    "mocha": "^3.2.0"
   },
   "keywords": [
     "ethers",
