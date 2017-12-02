@@ -5,6 +5,7 @@
 var fs = require('fs');
 var path = require('path');
 var REPL = require('repl');
+var inspect = require('util').inspect;
 
 var ethers = require('ethers');
 
@@ -96,7 +97,7 @@ function doSandbox(opts) {
                 repl.context._p = result;
 
                 var timer = setTimeout(function() {
-                    console.log(util.inspect(result));
+                    console.log(inspect(result));
                     timer = null;
                 }, 500);
 
