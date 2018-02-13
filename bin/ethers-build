@@ -35,6 +35,7 @@ var options = {
 
     head: false,
     published: false,
+    host: '127.0.0.1',
     port: 8080,
     slug: [],
     signed: false,
@@ -355,7 +356,7 @@ function doPublish(slugData) {
     return api.putSlug(null, slugData);
 }
 
-function doServe(provider, port, slug, options) {
+function doServe(provider, host, port, slug, options) {
 
     if (slug) {
         var handler = function(path) {
@@ -376,7 +377,7 @@ function doServe(provider, port, slug, options) {
         var handler = WebServer.staticFileHandler();
     }
 
-    var webServer = new WebServer(handler, { port: port });
+    var webServer = new WebServer(handler, { host: host, port: port });
 
     webServer.addOverride(accountFilename, WebServer.makeError(403, 'Forbidden'));
 
@@ -598,7 +599,7 @@ getopts(options).then(function(opts) {
             if (slugs.length) {
                 slug = Slug.verify(fs.readFileSync(slugs[0]).toString(), true);
             }
-            return (function() { doServe(opts.provider, options.port, slug, options); });
+            return (function() { doServe(opts.provider, opts.options.host, opts.options.port, slug, options); });
         })();
 
         case 'status': return (function() {
@@ -713,7 +714,7 @@ getopts(options).then(function(opts) {
     console.log('    ethers-build deploy FILENAME.js [ Node + Account + Tx Options ]');
     console.log('    ethers-build deploy FILENAME.sol [ Node + Account + Tx Options ]');
     console.log('');
-    console.log('    ethers-build serve [ --slug SLUG ] [ --port PORT ] [ Node Options ]');
+    console.log('    ethers-build serve [ --slug SLUG ] [ --host HOST ] [ --port PORT ] [ Node Options ]');
     console.log('    ethers-build init');
     console.log('    ethers-build status [ --head ] [ --slug A ] [ --slug B ] [ --published ]');
     console.log('    ethers-build diff [ --head ] [ --slug A ] [ --slug B ] [ --published ]');
