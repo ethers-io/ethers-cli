@@ -356,7 +356,6 @@ function doPublish(slugData) {
 }
 
 function doServe(provider, port, slug, options) {
-    var ethersHtml = fs.readFileSync(path.resolve(__dirname, '../static/index.html')).toString();
 
     if (slug) {
         var handler = function(path) {
@@ -379,23 +378,17 @@ function doServe(provider, port, slug, options) {
 
     var webServer = new WebServer(handler, { port: port });
 
-    if (provider.url) {
-        ethersHtml = ethersHtml.replace(/<ETHERS_NETWORK>/g, proivider.url)
-    } else if (provider.testnet) {
-        ethersHtml = ethersHtml.replace(/<ETHERS_NETWORK>/g, 'testnet')
-    } else {
-        ethersHtml = ethersHtml.replace(/<ETHERS_NETWORK>/g, 'mainnet')
-    }
-
     webServer.addOverride(accountFilename, WebServer.makeError(403, 'Forbidden'));
-    webServer.addOverride('/test', 'foo');
-    webServer.addOverride('/_/index.html', ethersHtml);
 
     webServer.start(function() {
-        var url = 'http://localhost:' + webServer.port + '/_/#!/app-link-insecure/localhost:' + webServer.port + '/';
+        var path = '/#!/app-link-insecure/localhost:' + webServer.port + '/';
 
         console.log('Listening on port: ' + webServer.port);
-        console.log('Server Ethers app: ' + url);
+        console.log('Local Application Test URL:');
+        console.log('  mainnet: http://ethers.io' + path);
+        console.log('  ropsten: http://ropsten.ethers.io' + path);
+        console.log('  rinkeby: http://rinkeby.ethers.io' + path);
+        console.log('  kovan:   http://kovan.ethers.io' + path);
     });
 
     return new Promise(function(resolve, reject) {
@@ -586,8 +579,10 @@ getopts(options).then(function(opts) {
                     return doPublish(slugData);
                 }).then(function(host) {
                     console.log('Application URLs:');
-                    console.log('  Testnet: https://testnet.ethers.io/#!/app-link/' + host);
-                    console.log('  Mainnet: https://ethers.io/#!/app-link/' + host);
+                    console.log('  Mainnet:  https://ethers.io/#!/app-link/' + host);
+                    console.log('  Ropsten:  https://ropsten.ethers.io/#!/app-link/' + host);
+                    console.log('  Rinkebey: https://rinkeby.ethers.io/#!/app-link/' + host);
+                    console.log('  Kovan:    https://kovan.ethers.io/#!/app-link/' + host);
                     console.log('Successfully deployed!');
                 }, function(error) {
                     console.log('Error deploying:');
