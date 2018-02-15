@@ -12,7 +12,7 @@ Build, debug and deploy Ethers applications from the command line.
 Documentation
 -------------
 
-The ethers-cli package is documented in the [Ethers Developer Documentation](https://docs.ethers.io/ethers-app/dev-cli.html).
+The ethers-cli package is documented in the [Ethers Developer Documentation](https://docs.ethers.io/ethers-app/html/).
 
 License
 -------
