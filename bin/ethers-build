@@ -728,8 +728,8 @@ getopts(options).then(function(opts) {
     console.log('  --optimize            Run the optimizer');
     console.log('');
     console.log('Node Options');
-    console.log('  --testnet             Use testnet configuration');
-    //console.log('  --chain-id            Use the chain ID on the network');
+    console.log('  --testnet             Use "ropsten" configuration (deprecated)');
+    console.log('  --network NETWORK     Use NETWORK configuration (default: homestead)');
     console.log('  --rpc URL             Use the Ethereum node at URL');
     console.log('');
     console.log('Account Options');

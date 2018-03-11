@@ -4,7 +4,6 @@
 
 var fs = require('fs');
 var path = require('path');
-var REPL = require('repl');
 var inspect = require('util').inspect;
 
 var ethers = require('ethers');
@@ -12,6 +11,8 @@ var ethers = require('ethers');
 var builders = require('../lib/builders');
 var compiler = require('../lib/compiler');
 var getopts = require('../lib/getopts');
+
+var REPL = require('repl');
 
 var version = require('../package.json').version;
 
@@ -85,14 +86,42 @@ function doSandbox(opts) {
         provider = builder.provider;
         accounts = builder.accounts;
     } else {
-        prompt = (provider.testnet ? 'testnet': 'mainnet');
+        prompt = provider.name;
     }
 
-    var repl = REPL.start(prompt + '> ');
+    //var inputStream = new PauseStream(process.stdin);
+
+    var repl = REPL.start({
+        input: process.stdin,
+        output: process.stdout,
+        prompt: prompt + '> '
+    });
+
+    repl.input = repl.inputStream;
+
+    function pause() {
+        //repl.pause();
+    }
+
+    function resume() {
+        //repl.resume();
+    }
+
     var defaultEval = repl.eval.bind(repl);
-    repl.eval = function(cmd, context, filename, callback) {
-        defaultEval(cmd, context, filename, function(error, result) {
+    repl.eval = function(cmd, context, filename, cb) {
+        var processResult = function(error, result) {
             if (result instanceof Promise) {
+                if (result._forceWait) {
+                    pause();
+                    result.then(function(result) {
+                        resume();
+                        cb(null, result);
+                    }, function(error) {
+                        resume();
+                        cb(error);
+                    });
+                    return;
+                }
 
                 repl.context._p = result;
 
@@ -107,7 +136,7 @@ function doSandbox(opts) {
                         console.log('Resolved:');
                     }
                     repl.context._p = result;
-                    callback(null, result);
+                    cb(null, result);
 
                 }, function(error) {
                     if (timer) {
@@ -115,13 +144,20 @@ function doSandbox(opts) {
                         console.log('Rejected:');
                     }
                     repl.context._p = error;
-                    callback(error);
+                    cb(error);
                 });
 
             } else {
-                callback(error, result);
+                cb(error, result);
             }
-        });
+        };
+
+        try {
+            defaultEval(cmd, context, filename, processResult);
+        } catch (error) {
+            console.log('FOBAR');
+            cb(error);
+        }
     }
 
     // @TODO: Make these read-only
@@ -139,9 +175,11 @@ function doSandbox(opts) {
 
     repl.context.utils = ethers.utils;
 
+    repl.context.abiCoder = ethers.utils.AbiCoder.defaultCoder;
     repl.context.BN = ethers.utils.bigNumberify;
     repl.context.bigNumberify = ethers.utils.bigNumberify;
     repl.context.formatEther = ethers.utils.formatEther;
+    repl.context.formatUnits = ethers.utils.formatUnits;
     repl.context.getAddress = ethers.utils.getAddress;
     repl.context.getContractAddress = ethers.utils.getContractAddress;
     repl.context.hexlify = ethers.utils.hexlify;
@@ -149,6 +187,7 @@ function doSandbox(opts) {
     repl.context.keccak256 = ethers.utils.keccak256;
     repl.context.namehash = ethers.utils.namehash;
     repl.context.parseEther = ethers.utils.parseEther;
+    repl.context.parseUnits = ethers.utils.parseUnits;
     repl.context.randomBytes = ethers.utils.randomBytes;
     repl.context.sha256 = ethers.utils.sha256;
     repl.context.toUtf8Bytes = ethers.utils.toUtf8Bytes;
@@ -158,8 +197,12 @@ function doSandbox(opts) {
         help: 'list the directory',
         action: function(name) {
             if (!name) { name = '.'; }
-            this.lineParser.reset();
-            this.bufferedCommand = '';
+            //this.lineParser.reset();
+            if (this.clearBufferedCommand) {
+                this.clearBufferedCommand()
+            } else {
+                this.bufferedCommand = '';
+            }
             fs.readdirSync(path.resolve(name)).forEach(function(filename) {
                 console.log('  ' + filename);
             });
@@ -170,8 +213,12 @@ function doSandbox(opts) {
     repl.defineCommand('cat', {
         help: 'cat a file',
         action: function(name) {
-            this.lineParser.reset();
-            this.bufferedCommand = '';
+            //this.lineParser.reset();
+            if (this.clearBufferedCommand) {
+                this.clearBufferedCommand()
+            } else {
+                this.bufferedCommand = '';
+            }
             if (name) {
                 console.log(fs.readFileSync(path.resolve(name)).toString());
             }
@@ -194,7 +241,7 @@ getopts(options).then(function(opts) {
     if (opts.options.help) { getopts.throwError(); }
 
     if (opts.options.version) {
-        console.log('ethers-build/' + version);
+        console.log('ethers/' + version);
         return function() { }
     }
 
@@ -283,7 +330,7 @@ getopts(options).then(function(opts) {
 
 }, function (error) {
     console.log('');
-    console.log('Command Line Interface - ethers-build/' + version);
+    console.log('Command Line Interface - ethers/' + version);
     console.log('');
     console.log('Usage:');
     console.log('');
@@ -308,7 +355,7 @@ getopts(options).then(function(opts) {
 //    console.log('    ethers sign [ Account + Tx Options ]');
     console.log('');
     console.log('Account Options');
-    console.log('  --account');
+    console.log('  --account FILENAME');
     console.log('');
     console.log('Transaction Options');
     console.log('  --to ADDRESS');
