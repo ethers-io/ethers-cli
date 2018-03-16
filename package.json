@@ -1,6 +1,6 @@
 {
   "name": "ethers-cli",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Command-Line Interface to ethers.io and ethers.space.",
   "main": "index.js",
   "scripts": {
