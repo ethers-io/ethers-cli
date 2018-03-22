@@ -123,9 +123,9 @@ function doCompile(filename, optimize, name, formats) {
     return JSON.stringify(result, null, '    ');
 }
 
-function doDeploy(provider, accounts, deploy, options) {
+function doDeploy(provider, accounts, deploy, args, options) {
     var builder = new builders.Builder(provider, accounts, deploy);
-    return builder.deploy();
+    return builder.deploy.apply(builder, args);
 }
 
 function doPublish(slugData) {
@@ -167,14 +167,26 @@ function doServe(provider, host, port, gitTag, path) {
     webServer.addOverride(DefaultAccountFilename, WebServer.makeError(403, 'Forbidden'));
 
     webServer.start(function() {
-        var path = '/#!/app-link-insecure/localhost:' + webServer.port + '/';
+        var fragment = '#!/app-link-insecure/localhost:' + webServer.port + '/';
 
         console.log('Listening on port: ' + webServer.port);
         console.log('Local Application Test URL:');
-        console.log('  mainnet: http://ethers.io' + path);
-        console.log('  ropsten: http://ropsten.ethers.io' + path);
-        console.log('  rinkeby: http://rinkeby.ethers.io' + path);
-        console.log('  kovan:   http://kovan.ethers.io' + path);
+        if (provider.url) {
+            var path = [];
+            var match = provider.url.match(/(https?):\/\/([A-Za-z0-9.-]+)(:([0-9]+))(.*)/);
+            if (match) {
+                if (match[1] && match[1] !== 'http') { path.push('scheme=' + match[1]); }
+                if (match[2] && match[2] !== 'localhost') { path.push('host=' + match[2]); }
+                if (match[4] && match[4] !== '8545') { path.push('port=' + match[4]); }
+                if (match[5] && match[5] !== '/') { path.push('path=' + match[5]); }
+            }
+            console.log('  http://custom-rpc.ethers.io/?' + path.join('&') + fragment);
+        } else {
+            console.log('  mainnet: http://ethers.io/' + fragment);
+            console.log('  ropsten: http://ropsten.ethers.io/' + fragment);
+            console.log('  rinkeby: http://rinkeby.ethers.io/' + fragment);
+            console.log('  kovan:   http://kovan.ethers.io/' + fragment);
+        }
     });
 
     return new Promise(function(resolve, reject) {
@@ -201,7 +213,9 @@ getopts(options).then(function(opts) {
 
     switch (command) {
         case 'compile': return (function() {
-            if (opts.args.length !== 1) { getopts.throwError('deploy requires FILENAME_SOL'); }
+            if (opts.args.length < 1) { getopts.throwError('compile requires FILENAME_SOL'); }
+            var filename = opts.args.shift();
+            if (opts.args.length > 0) { getopts.throwError('too many arguments'); }
 
             var formats = {};
             if (opts.options.bytecode) { formats.bytecode = true; }
@@ -210,14 +224,14 @@ getopts(options).then(function(opts) {
             if (Object.keys(formats).length === 0) { formats = { bytecode: true, interface: true } };
 
             return (function() {
-                var output = doCompile(opts.args[0], opts.options.optimize, (opts.options.contract || null), formats);
+                var output = doCompile(filename, opts.options.optimize, (opts.options.contract || null), formats);
                 console.log(output);
                 return Promise.resolve(output);
             });
         })();
 
         case 'deploy': return (function() {
-            if (opts.args.length !== 1) { getopts.throwError('deploy requires FILENAME_SOL'); }
+            if (opts.args.length < 1) { getopts.throwError('deploy requires FILENAME_SOL'); }
             var filename = opts.args.shift();
 
             var deployFunc = function(builder) {
@@ -250,12 +264,12 @@ getopts(options).then(function(opts) {
             if (opts.explicit.data) { getopts.throwError('unknown option: --data'); }
 
             return (function() {
-                return doDeploy(opts.provider, opts.accounts, deployFunc, options);
+                return doDeploy(opts.provider, opts.accounts, deployFunc, opts.args, options);
             });
         })();
 
         case 'run': return (function() {
-            if (opts.args.length !== 1) { getopts.throwError('deploy requires FILENAME_JS'); }
+            if (opts.args.length < 1) { getopts.throwError('run requires FILENAME_JS'); }
             var filename = opts.args.shift();
 
             try {
@@ -269,7 +283,7 @@ getopts(options).then(function(opts) {
             if (opts.explicit.value) { getopts.throwError('unknown option: --value'); }
 
             return (function() {
-                return doDeploy(opts.provider, opts.accounts, deployFunc, options);
+                return doDeploy(opts.provider, opts.accounts, deployFunc, opts.args, options);
             });
         })();
 
@@ -307,12 +321,12 @@ getopts(options).then(function(opts) {
         })();
 
         case 'publish': return (function() {
-            if (opts.accounts.length != 1) { getopts.throwError('publish requires an account'); }
-
             var tag = 'HEAD', path = '.';
             if (opts.args.length > 0) { tag = opts.args.shift(); }
             if (opts.args.length > 0) { path = opts.args.shift(); }
             if (opts.args.length > 0) { getopts.throwError('too many arguments'); }
+
+            if (opts.accounts.length != 1) { getopts.throwError('publish requires an account'); }
 
             return (function() {
                 return api.getPublished(opts.accounts[0].address).then(function(published) {
@@ -325,22 +339,24 @@ getopts(options).then(function(opts) {
                             nonce: published.nonce + 1,
                             version: 2
                         });
-                        var signature = opts.accounts[0].signMessage(contentData);
-                        var pubdata = JSON.stringify({
-                            content: zlib.gzipSync(contentData).toString('base64'),
-                            signature: signature
-                        });
-                        return api.publish(pubdata).then(function(success) {
-                            var host = opts.accounts[0].address.toLowerCase() + '.ethers.space/';
-                            console.log('');
-                            console.log('Successfully deployed!');
-                            console.log('');
-                            console.log('Application URLs:');
-                            console.log('  Mainnet:  https://ethers.io/#!/app-link/' + host);
-                            console.log('  Ropsten:  https://ropsten.ethers.io/#!/app-link/' + host);
-                            console.log('  Rinkebey: https://rinkeby.ethers.io/#!/app-link/' + host);
-                            console.log('  Kovan:    https://kovan.ethers.io/#!/app-link/' + host);
-                            console.log('');
+
+                        return opts.accounts[0].signMessage(contentData).then(function(signature) {
+                            var pubdata = JSON.stringify({
+                                content: zlib.gzipSync(contentData).toString('base64'),
+                                signature: signature
+                            });
+                            return api.publish(pubdata).then(function(success) {
+                                var host = opts.accounts[0].address.toLowerCase() + '.ethers.space/';
+                                console.log('');
+                                console.log('Successfully deployed!');
+                                console.log('');
+                                console.log('Application URLs:');
+                                console.log('  Mainnet:  https://ethers.io/#!/app-link/' + host);
+                                console.log('  Ropsten:  https://ropsten.ethers.io/#!/app-link/' + host);
+                                console.log('  Rinkebey: https://rinkeby.ethers.io/#!/app-link/' + host);
+                                console.log('  Kovan:    https://kovan.ethers.io/#!/app-link/' + host);
+                                console.log('');
+                            });
                         });
                     });
                 });
@@ -349,34 +365,31 @@ getopts(options).then(function(opts) {
 
         case 'serve': return (function() {
             var tag = null, path = '.';
-            if (opts.args.length > 0) {
-                tag = opts.args.shift();
-                if (tag === 'null') { tag = null; }
-            }
+            if (opts.args.length > 0) { tag = opts.args.shift(); }
             if (opts.args.length > 0) { path = opts.args.shift(); }
+            if (opts.args.length > 0) { getopts.throwError('too many arguments'); }
+
+            if (tag === 'null') { tag = null; }
+
             return (function() {
                 return doServe(opts.provider, opts.options.host, opts.options.port, tag, path);
             });
         })();
 
         case 'status': return (function() {
-            var filename = DefaultAccountFilename;
-            if (opts.args.length > 0) { filename = opts.args.shift(); }
-            try {
-                var address = ethers.utils.getAddress(JSON.parse(fs.readFileSync(filename).toString()).address);
-            } catch (error) {
-                console.log(error);
-                getopts.throwError('invalid JSON wallet - ' + filename);
-            }
+            if (opts.args.length > 0) { getopts.throwError('too many arguments'); }
+
+            if (opts.accounts.length != 1) { getopts.throwError('status requires an account'); }
 
             return (function() {
+                var address = opts.accounts[0].address;
                 return api.getPublished(address).then(function(published) {
                     var host = address.toLowerCase() + '.ethers.space/';
 
                     console.log('');
                     console.log('Status:');
                     console.log('  Address:   ' + address);
-                    console.log('  Nonce:     ' + published.nonce);
+                    console.log('  PubNonce:  ' + published.nonce);
                     console.log('  Git Tag:   ' + published.tag);
                     console.log('  Raw URL:   https://' + host);
                     console.log('');
@@ -403,16 +416,16 @@ getopts(options).then(function(opts) {
     console.log('');
     console.log('Usage:');
     console.log('');
-    console.log('    ethers-build compile FILENAME [ Compiler Options ] [ --optimize ]');
+    console.log('    ethers-build compile FILENAME_SOL [ Compiler Options ] [ --optimize ]');
     console.log('');
     console.log('    ethers-build run FILENAME_JS [ Node + Account + Tx Options ]');
     console.log('    ethers-build deploy FILENAME_SOL [ Node + Account + Tx Options ]');
     console.log('');
-    console.log('    ethers-build serve [ GIT_TAG ] [ --host HOST ] [ --port PORT ] [ Node Options ]');
+    console.log('    ethers-build serve [ GIT_HASH ] [ --host HOST ] [ --port PORT ] [ Node Options ]');
     console.log('');
-    console.log('    ethers-build init');
-    console.log('    ethers-build publish [ GIT_TAG [ PATH ] ]');
-    console.log('    ethers-build status [ ACCOUNT ]');
+    console.log('    ethers-build init [ FILENAME ]');
+    console.log('    ethers-build publish [ GIT_HASH ] [ PATH ] [ Account Options ]');
+    console.log('    ethers-build status [ Account Options ]');
     console.log('');
     console.log('Compile Options');
     console.log('  --bytecode            Only output bytecode');
@@ -421,12 +434,11 @@ getopts(options).then(function(opts) {
     console.log('  --optimize            Run the optimizer');
     console.log('');
     console.log('Node Options');
-    console.log('  --testnet             Use "ropsten" configuration (deprecated)');
     console.log('  --network NETWORK     Use NETWORK configuration (default: homestead)');
     console.log('  --rpc URL             Use the Ethereum node at URL');
     console.log('');
     console.log('Account Options');
-    console.log('  --account FILENAME    Use the JSON wallet');
+    console.log('  --account FILENAME    Use the JSON wallet (default: ./account.json)');
     //console.log('  --private-key KEY     Use the private key (use - for secure entry)');
     //console.log('  --mnemonic PHRASE     Use the mneonic (use - for secure entry)');
     console.log('');
