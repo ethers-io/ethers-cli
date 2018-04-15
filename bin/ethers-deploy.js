@@ -201,7 +201,7 @@ getopts(options).then(function(opts) {
     if (opts.options.help) { getopts.throwError(); }
 
     if (opts.options.version) {
-        console.log('ethers-build/' + version);
+        console.log('ethers-deploy/' + version);
         return function() { }
     }
 
@@ -412,20 +412,20 @@ getopts(options).then(function(opts) {
 
 }, function(error) {
     console.log('');
-    console.log('Command Line Interface - ethers-build/' + version);
+    console.log('Command Line Interface - ethers-deploy/' + version);
     console.log('');
     console.log('Usage:');
     console.log('');
-    console.log('    ethers-build compile FILENAME_SOL [ Compiler Options ] [ --optimize ]');
+    console.log('    ethers-deploy compile FILENAME_SOL [ Compiler Options ] [ --optimize ]');
     console.log('');
-    console.log('    ethers-build run FILENAME_JS [ Node + Account + Tx Options ]');
-    console.log('    ethers-build deploy FILENAME_SOL [ Node + Account + Tx Options ]');
+    console.log('    ethers-deploy run FILENAME_JS [ Node + Account + Tx Options ]');
+    console.log('    ethers-deploy deploy FILENAME_SOL [ Node + Account + Tx Options ]');
     console.log('');
-    console.log('    ethers-build serve [ GIT_HASH ] [ --host HOST ] [ --port PORT ] [ Node Options ]');
+    console.log('    ethers-deploy serve [ GIT_HASH ] [ --host HOST ] [ --port PORT ] [ Node Options ]');
     console.log('');
-    console.log('    ethers-build init [ FILENAME ]');
-    console.log('    ethers-build publish [ GIT_HASH ] [ PATH ] [ Account Options ]');
-    console.log('    ethers-build status [ Account Options ]');
+    console.log('    ethers-deploy init [ FILENAME ]');
+    console.log('    ethers-deploy publish [ GIT_HASH ] [ PATH ] [ Account Options ]');
+    console.log('    ethers-deploy status [ Account Options ]');
     console.log('');
     console.log('Compile Options');
     console.log('  --bytecode            Only output bytecode');
