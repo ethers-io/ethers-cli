@@ -11,15 +11,13 @@
   },
   "bin": {
     "ethers": "./bin/ethers.js",
-    "ethers-ens": "./bin/ethers-ens.js",
-    "ethers-space": "./bin/ethers-space.js",
-    "ethers-build": "./bin/ethers-build.js",
-    "ethers-deploy": "./bin/ethers-deploy.js"
+    "ethers-ens": "./bin/ethers-ens.js"
   },
   "dependencies": {
     "@types/node": "^10.3.2",
     "abs": "1.3.6",
     "ethers": "^4.0.7",
+    "ethers-ens": "next",
     "ethers-ledger": "0.0.1",
     "mime-types": "2.1.11"
   },
