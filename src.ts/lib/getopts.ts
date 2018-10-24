@@ -219,9 +219,9 @@ function getopts(options, argv) {
         if (options._provider) {
             var network = opts.options.network;
             if (opts.options.rpc) {
-                opts.provider = new ethers.providers.JsonRpcProvider(opts.options.rpc, network);
+                opts.provider = new ethers.JsonRpcProvider(opts.options.rpc, network);
             } else {
-                opts.provider = ethers.providers.getDefaultProvider(network);
+                opts.provider = ethers.getDefaultProvider(network);
             }
         }
 
@@ -235,7 +235,7 @@ function getopts(options, argv) {
                         provider: opts.provider,
                         sendTransaction: function(tx) {
                             return Account.confirmTransaction(opts, tx, address).then(function(tx) {
-                                tx = ethers.providers.JsonRpcProvider._hexlifyTransaction(tx);
+                                tx = ethers.JsonRpcProvider._hexlifyTransaction(tx);
                                 return opts.provider.send('eth_sendTransaction', [ tx ]).then(function(hash) {
                                     tx.hash = hash;
                                     return tx;

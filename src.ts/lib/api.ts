@@ -1,8 +1,8 @@
 'use strict';
 
-var http = require('http');
-var https = require('https');
-var urlParse = require('url').parse;
+import http from 'http';
+import https from 'https';
+import { parse as urlParse } from 'url';
 
 var ethers = require('ethers');
 
@@ -11,15 +11,17 @@ var urlApi = 'https://api.ethers.io/api/v1/';
 
 // @TODO: Include a timestamp (or nonce of some sort) in uploads
 
-function post(url, data) {
-    var options = urlParse(url);
+function post(url: string, data: string): Promise<any> {
+    var options: http.ClientRequestArgs = urlParse(url);
     options.method = 'POST';
     options.headers = {'content-length': String(data.length)};
     return new Promise(function(resolve, reject) {
-        var request = ((options.protocol === 'https:') ? https: http).request(options, function(response) {
+        let requestFunc = http.request;
+        if (options.protocol === 'https:') { requestFunc = https.request; }
+        var request = requestFunc(options, function(response: http.IncomingMessage) {
             var data = new Buffer(0);
 
-            response.on('data', function(chunk) {
+            response.on('data', function(chunk: Buffer) {
                 data = Buffer.concat([data, chunk]);
             });
 
@@ -36,7 +38,7 @@ function post(url, data) {
                 }
             });
 
-            response.on('error', function(error) {
+            response.on('error', function(error: Error) {
                 reject(error);
             });
         });
@@ -46,13 +48,13 @@ function post(url, data) {
     });
 }
 
-function addContract(source) {
-}
+//function addContract(source) {
+//}
 
-function addDeployment(hash, multihash, optimize, compilerVersion, deploymentTarget) {
-}
+//function addDeployment(hash, multihash, optimize, compilerVersion, deploymentTarget) {
+//}
 
-function publish(signedPubdata) {
+function publish(signedPubdata: string) {
     var payload = JSON.stringify({
         action: 'publish',
         pubdata: signedPubdata
@@ -67,7 +69,7 @@ function publish(signedPubdata) {
     });
 }
 
-function getPublished(address) {
+function getPublished(address: string) {
     var payload = JSON.stringify({
         action: 'getPublished',
         address: ethers.utils.getAddress(address)
@@ -82,7 +84,7 @@ function getPublished(address) {
     });
 }
 
-function putSlug(alias, signedSlug) {
+function putSlug(alias: string, signedSlug: string) {
     var payload = JSON.stringify({
         action: 'addSlug',
         slug: signedSlug
@@ -97,7 +99,7 @@ function putSlug(alias, signedSlug) {
     });
 }
 
-function getSlugVersions(address) {
+function getSlugVersions(address: string) {
     var payload = JSON.stringify({
         action: 'getSlugVersions',
         address: ethers.utils.getAddress(address)

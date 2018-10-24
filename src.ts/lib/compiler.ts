@@ -1,28 +1,25 @@
 'use strict';
 
-var fs = require('fs');
-var path = require('path');
-var util = require('util');
+import fs from 'fs';
+import path from 'path';
+import util from 'util';
 
-var ethers = require('ethers');
+import { ethers } from 'ethers';
 
-var solc = null;
+let solc: { compile: (...args: Array<any>) => any } = null;
 
-var DebugPrinter = require('./debug-printer');
+import { DebugPrinter } from './debug-printer';
 
-function keccak(text) {
-    return ethers.utils.keccak256(ethers.utils.toUtf8Bytes(text));
-}
-
-function countChar(text, character) {
+function countChar(text: string, character: string) {
     return text.split(character).length - 1;
 }
 
 function CompileWarning() { }
 function CompileError() { }
 
-function populate(kind, params) {
-    var message = params.message, code = null;
+function populate(kind: any, params: { message: string, code?: string }) {
+    var message = params.message;
+    //var code = null;
     var nl = message.indexOf('\n');
     if (nl >= 0) {
         params.code = message.substring(nl + 1);
@@ -36,118 +33,147 @@ function populate(kind, params) {
     return result;
 }
 
-function parseError(text) {
-    var uid = keccak(text);
+class ParsedError {
+    readonly filename: string;
+
+    readonly row: number;
+    readonly column: number;
+
+    readonly message: string;
+    readonly uid: string;
+    readonly type: string;
+
+    constructor(filename: string, row: number, column: number, type: string, message: string, uid: string) {
+        this.filename = filename;
+        this.row = row;
+        this.column = column;
+        this.type = type;
+        this.message = message;
+        this.uid = uid;
+    }
+}
+
+function parseError(text: string): ParsedError {
+    var uid = ethers.utils.id(text);
     var match = text.match(/^([^:]*):([0-9]+):([0-9]+): Warning: ((.|\n)*)$/);
     if (match) {
-        return populate(CompileWarning, {
-            column: parseInt(match[3]),
-            filename: match[1],
-            message: match[4],
-            row: parseInt(match[2]),
-            type: 'Warning',
-            uid: uid
-        });
+        return new ParsedError(match[1], parseInt(match[2]), parseInt(match[3]), 'Warning', match[4], uid);
     }
 
     var match = text.match(/^([^:]*):([0-9]+):([0-9]+): (\S*Error): ((.|\n)*)$/);
     if (match) {
-        return populate(CompileError, {
-            column: parseInt(match[3]),
-            filename: match[1],
-            message: match[5],
-            row: parseInt(match[2]),
-            type: match[4],
-            uid: uid
-        });
+        return new ParsedError(match[1], parseInt(match[2]), parseInt(match[3]), match[4], match[5], uid);
     }
 
     return populate(CompileError, { message: text, uid: uid });
 }
 
 
-function Source(filename, source) {
-    this.filename = filename;
-    this.source = source;
-    this.code = [];
+class Source {
+    readonly filename: string;
+    readonly source: string;
+    readonly code: Array<Code>;
+    constructor(filename, source) {
+        this.filename = filename;
+        this.source = source;
+        this.code = [];
+    }
+
+    inspect(depth: number, opts: any) {
+        return "[source]";
+    }
 }
 
-Source.prototype.inspect = function(depth, opts) {
-    return "[source]";
-}
+class Code {
+    readonly name: string;
+    readonly bytecode: string;
+    readonly jsonInterface: string;
+    readonly interface: ethers.Interface;
+    readonly source: Source;
+    readonly warnings: Array<ParsedError>;
+    readonly relatedWarnings: Array<ParsedError>;
 
+    constructor(name: string, bytecode: string, contractInterface: string, source?: Source) {
+        ethers.errors.checkNew(this, Code);
 
-function Code(name, bytecode, contractInterface, source) {
-    if (!(this instanceof Code)) { throw new Error('missing new'); }
+        this.name = name;
+        this.bytecode = bytecode;
+        this.jsonInterface = contractInterface;
+        this.interface = new ethers.Interface(contractInterface);
 
-    this.name = name;
-    this.bytecode = bytecode;
-    this.jsonInterface = contractInterface;
-    this.interface = new ethers.Interface(contractInterface);
+        this.source = source || (new Source(null, null));
+        this.source.code.push(this);
 
-    this.source = source || (new Source(null, null));
-    this.source.code.push(this);
-}
+        this.warnings = [];
+        this.relatedWarnings = [];
+    }
 
-Code.prototype.inspect = function(depth, opts) {
-    if (depth === 0) { return "[Code " + this.name + "]"; }
+    inspect(depth: number, opts: any) {
+        if (depth === 0) { return "[Code " + this.name + "]"; }
 
-    function Code() { }
-    var code = new Code();
+        let code = {
+            name: this.name,
+            bytecode: this.bytecode,
+            jsonInterface: this.jsonInterface,
+            interface: this.interface,
+            source: this.source,
+        };
 
-    code.name = this.name;
-    code.bytecode = this.bytecode;
-    code.jsonInterface = this.jsonInterface;
-
-    if (depth === 1) {
-        if (code.bytecode.length > 32) {
-            code.bytecode = code.bytecode.substring(0, 28) + ' ...';
+        if (depth === 1) {
+            if (code.bytecode.length > 32) {
+                code.bytecode = code.bytecode.substring(0, 28) + ' ...';
+            }
+            if (code.jsonInterface.length > 32) {
+                code.jsonInterface = code.jsonInterface.substring(0, 28) + ' ...';
+            }
         }
-        if (code.jsonInterface.length > 32) {
-            code.jsonInterface = code.jsonInterface.substring(0, 28) + ' ...';
+
+        return code;
+    }
+
+    connect(address: string, providerOrSigner: ethers.types.Signer | ethers.providers.Provider): ethers.Contract {
+        return new ethers.Contract(address, this.interface, providerOrSigner)
+    }
+
+    getDeployTransaction(...args: Array<any>) {
+        var params = [ this.bytecode, this.interface ];
+        return {
+            data: this.interface.deployFunction.encode(this.bytecode, params)
         }
     }
-    code.interface = this.interface;
-    code.source = this.source;
-
-    return code;
-
-    /*
-
-    return 'Code ' + util.inspect({
-        name: this.name,
-        bytecode: bytecodeShort,
-    }, { depth: depth });
-    */
 }
 
-Code.prototype.connect = function(address, providerOrSigner) {
-    return new ethers.Contract(address, this.interface, providerOrSigner)
+type CompiledResult = {
+    errors: Array<ParsedError>;
+    warnings: Array<ParsedError>;
+    relatedWarnings?: Array<ParsedError>;
+    sources?: { [filename: string]: Source };
+    code?: Array<string>;
+};
+
+type _Contract = {
+    bytecode: string;
+    interface: string;
 }
 
-Code.prototype.getDeployTransaction = function() {
-    var args = [ this.bytecode, this.interface ];
-    Array.prototype.forEach.call(arguments, function(arg) {
-        args.push(arg);
-    });
-    return ethers.Contract.getDeployTransaction.apply(ethers.Contract, args);
-}
-
-
+type _CompiledCode = {
+    contracts: { [filename: string]: _Contract };
+    errors: Array<string>;
+};
 
 var solidity = {
 
     // Expose the raw compiler, in case that's what the user really wants
-    _compile: function() {
+    _compile: function(...args: Array<any>): _CompiledCode {
         if (!solc) {
             solc = require('solc');
         }
-        return solc.compile.apply(solc, Array.prototype.slice.call(arguments));
+        return solc.compile.apply(solc, args);
     },
 
     // Experimental; this will change
-    compile: function(sources, optimize, loadSource) {
-        function loadImport(filename) {
+    compile: function(sources: { [filename: string]: string }, optimize: boolean, loadSource: (filename: string) => string) {
+        function loadImport(filename: string): { contents?: string, error?: string } {
             if (filename.match(/\.sol$/)) {
                 try {
                     return { contents: loadSource(filename) };
@@ -160,18 +186,21 @@ var solidity = {
 
         var output = solidity._compile({ sources: sources }, (optimize ? 1: 0), loadImport);
 
-        var result = { errors: [], warnings: [] };
+        let result: CompiledResult = {
+            errors: [],
+            warnings: []
+        };
 
-        var warningLookup = {}
+        var warningLookup: { [filename: string]: Array<ParsedError> } = {}
         if (output.errors) {
             output.errors.forEach(function(error) {
-                error = parseError(error);
-                if (error instanceof CompileWarning) {
-                    result.warnings.push(error);
-                    if (!warningLookup[error.filename]) { warningLookup[error.filename] = []; }
-                    warningLookup[error.filename].push(error);
+                let parsedError = parseError(error);
+                if (parsedError instanceof CompileWarning) {
+                    result.warnings.push(parsedError);
+                    if (!warningLookup[parsedError.filename]) { warningLookup[parsedError.filename] = []; }
+                    warningLookup[parsedError.filename].push(parsedError);
                 } else {
-                    result.errors.push(error);
+                    result.errors.push(parsedError);
                 }
             });
         }
@@ -189,7 +218,7 @@ var solidity = {
                 result.sources[filename] = source;
             }
 
-            var code = new Code(name, '0x' + contract.bytecode, contract.interface, source);
+            let code = new Code(name, '0x' + contract.bytecode, contract.interface, source);
 
             // We don't usually need this, and it gums up the console output, so we
             // wrap it up in a getter function
@@ -199,11 +228,12 @@ var solidity = {
                 }
             });
 
-            code.warnings = warningLookup[filename] || [];
+            (warningLookup[filename] || []).forEach((warning: ParsedError) => {
+                code.warnings.push(warning);
+            });
 
-            code.relatedWarnings = [];
             (function() {
-                var warnings = {};
+                var warnings: { [uid: string]: boolean } = {};
                 code.warnings.forEach(function(warning) {
                     warnings[warning.uid] = true;
                 });
@@ -222,21 +252,21 @@ var solidity = {
     }
 };
 
-function _compile(filename, optimize, loadSource) {
+function _compile(filename: string, optimize: boolean, loadSource: (filename: string) => string) {
     var sources = {};
     sources[filename] = loadSource(path.resolve(filename));
     var output = solidity.compile(sources, optimize, loadSource);
 
     if (output.errors.length) {
         var error = new Error('compiler error');
-        error.errors = output.errors;
-        error.filename = filename;
-        error.optimize = optimize;
+        (<any>error).errors = output.errors;
+        (<any>error).filename = filename;
+        (<any>error).optimize = optimize;
         throw error;
     }
 
-    var result = {};
-    output.code.forEach(function(code) {
+    var result: { [filename: string]: any } = { };
+    output.code.forEach(function(code: any) {
 
         // Skip all intermediate contracts (inheritance and whatnot)
         if (path.resolve(code.source.filename) !== path.resolve(filename)) {
@@ -260,8 +290,17 @@ function _compile(filename, optimize, loadSource) {
     return result;
 }
 
+type FunctionDefinition = {
+     start: number;
+     length: number;
+     lineNo: number;
+     name: string;
+     signature: string;
+     body: string;
+};
+
 // Returns the entire function (by looking at balanced braces) of source, starting at offset
-function getFunction(source, offset) {
+function getFunction(source: string, offset: number): FunctionDefinition {
     var start = offset;
     offset += 'function'.length;
     var nameStart = -1;
@@ -296,16 +335,16 @@ function getFunction(source, offset) {
     }
 }
 
-function addDebugging(filename, source, addContractInterface) {
+function addDebugging(filename: string, source: string, addContractInterface: boolean): string {
 
     // Check the source is valid before we inject debugging goop
     (function() {
-        var output = compile(filename);
+        let output = compile(filename);
 
         // Errors found! Proceed no further.
         if (output.errors) {
-            var error = new Error('compiler error');
-            error.errors = output.errors;
+            let error = new Error('compiler error');
+            (<any>error).errors = output.errors;
             throw error;
         }
     })();
@@ -319,7 +358,7 @@ function addDebugging(filename, source, addContractInterface) {
     });
 
     // Replace all strings with a place holder to protect them from mutation
-    var strings = {};
+    var strings: { [ placeHolder: string]: string  } = {};
     (function() {
 
         var tokenIndex = 0;
@@ -329,7 +368,7 @@ function addDebugging(filename, source, addContractInterface) {
         }
 
         var nextId = 0;
-        source = source.replace(/("(?:[^\\"]|\\.)*")/g, function(match, p0, offset, all) {
+        source = source.replace(/("(?:[^\\"]|\\.)*")/g, function(match: string, p0: string, offset: number, all: string) {
             var placeholder = '_ethers_strings_' + (nextId++);
             strings[placeholder] = p0;
             return placeholder;
@@ -338,7 +377,7 @@ function addDebugging(filename, source, addContractInterface) {
 
     // Replace //! with debug print lines
     var nextLine = 0;
-    source = source.replace(/(\/\/!(.*))\n/g, function(match, p1, p2, offset, all) {
+    source = source.replace(/(\/\/!(.*))\n/g, function(match: string, p1: string, p2: string, offset: number, all: string) {
         var lineNo = countChar(all.substring(0, offset), '\n') + 1;
         p2 = p2.trim();
         if (strings[p2]) {
@@ -360,9 +399,10 @@ function addDebugging(filename, source, addContractInterface) {
         //return;
 
         // Reverse ordered list of functions (reversed so we don't affect line numbers)
-        var funcs = [];
-        source.replace(/(function)/g, function(match, p0, offset, all) {
+        var funcs: Array<FunctionDefinition> = [];
+        source.replace(/(function)/g, function(match: string, p0: string, offset: number, all: string): string {
             funcs.unshift(getFunction(all, offset));
+            return null;
         });
 
         funcs.forEach(function(func) {
@@ -407,19 +447,19 @@ function addDebugging(filename, source, addContractInterface) {
     return source;
 }
 
-function compile(filename, optimize) {
-    var loadSource = function(filename) {
+function compile(filename: string, optimize?: boolean) {
+    var loadSource = function(filename: string) {
         return fs.readFileSync(filename).toString();
     }
 
     return _compile(filename, optimize, loadSource);
 }
 
-function testCompile(filename, optimize) {
+function testCompile(filename: string, optimize: boolean) {
 
     // Must include the DebugPrinter exactly once
     var addDebugInterface = true;
-    var loadSource = function(filename) {
+    var loadSource = function(filename: string) {
         var source = addDebugging(filename, fs.readFileSync(filename).toString(), addDebugInterface);
         addDebugInterface = false;
         return source;
@@ -432,7 +472,7 @@ module.exports = {
    compile: compile,
    testCompile: testCompile,
 
-   makeCode: function(name, bytecode, contractInterface) {
+   makeCode: function(name: string, bytecode: string, contractInterface: string) {
        return new Code(name, bytecode, contractInterface);
    },
 
