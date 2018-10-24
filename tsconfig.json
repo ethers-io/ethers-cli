@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "declaration": false,
+    "esModuleInterop": true,
+    "lib": [ "es2015", "es5", "dom" ],
+    "module": "commonjs",
+    "outDir": "./",
+    "target": "es5",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+
+    "preserveSymlinks": true,
+
+    "preserveWatchOutput": true,
+    "pretty": false,
+    "forceConsistentCasingInFileNames": true,
+    "removeComments": false,
+
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true
+  },
+  "files": [
+      "./src.ts/bin/ethers.ts",
+      "./src.ts/bin/ethers-ens.ts",
+      "./thirdparty.d.ts"
+  ]
+}
