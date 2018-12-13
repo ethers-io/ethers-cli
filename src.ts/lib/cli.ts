@@ -97,7 +97,7 @@ class WrappedSigner extends Signer {
 
         if (this._opts.options['gas-limit'] != null) {
             tx.gasLimit = this._opts.options['gas-limit'];
-        } else {
+        } else if (tx.gasLimit == null) {
             let estimate = utils.shallowCopy(tx);
             estimate.from = this.getAddress();
             tx.gasLimit = this.provider.estimateGas(tx);
@@ -392,7 +392,7 @@ function showHelp(options: Options, plugins: { [command: string]: Plugin }, erro
         name = path.basename(process.argv[1]);
     }
 
-    console.log(name + '/' + info.version);
+    console.log(name + '/' + (options._version || info.version));
     console.log('Usage:');
     console.log('');
 
@@ -468,7 +468,7 @@ function showVersion(options: Options) {
         name = path.basename(process.argv[1]);
     }
 
-    console.log(info.name + '/' + info.version);
+    console.log((options._name || info.name) + '/' + (options._version || info.version));
 }
 
 export function run(options: Options, plugins: { [command: string]: Plugin }, argv?: Array<string>): Promise<Opts> {
