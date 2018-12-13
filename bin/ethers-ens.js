@@ -141,6 +141,9 @@ function dumpNameInfo(header, nameInfo) {
         if (nameInfo.url) {
             result.push(['URL', nameInfo.url]);
         }
+        if (nameInfo.contentHash) {
+            result.push(['Content Hash', nameInfo.contentHash]);
+        }
     }
     return dumpInfo(header, result);
 }
@@ -252,6 +255,7 @@ function getNameInfo(ens, name, extra) {
         result.publicKey = ens.getPublicKey(name);
         result.url = ens.getText(name, 'url');
         result.email = ens.getText(name, 'email');
+        result.contentHash = ens.getContentHash(name, true);
     }
     if (name.match(/\.eth$/) && name.split('.').length === 2) {
         result.auction = ens.getAuction(name);
@@ -272,6 +276,9 @@ function getNameInfo(ens, name, extra) {
         }
         if (result.email) {
             nameInfo.email = result.email;
+        }
+        if (result.contentHash) {
+            nameInfo.contentHash = result.contentHash;
         }
         if (result.auction) {
             nameInfo.startDate = result.startDate;
