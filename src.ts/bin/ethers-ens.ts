@@ -96,6 +96,9 @@ function dumpNameInfo(header: string, nameInfo: NameInfo): void {
         if (nameInfo.url) {
             result.push([ 'URL', nameInfo.url ]);
         }
+        if (nameInfo.contentHash) {
+            result.push([ 'Content Hash', nameInfo.contentHash ]);
+        }
     }
     return dumpInfo(header, result);
 }
@@ -179,6 +182,7 @@ interface PendingNameInfo {
     resolver: Promise<string>;
     owner: Promise<string>;
     addr: Promise<string>;
+    contentHash?: Promise<string>;
     publicKey?: Promise<string>;
     url?: Promise<string>;
     email?: Promise<string>;
@@ -194,6 +198,7 @@ interface NameInfo {
     publicKey?: string;
     url?: string;
     email?: string;
+    contentHash?: string;
     startDate?: Date;
     endDate?: Date;
     highestBid?: string;
@@ -236,6 +241,7 @@ function getNameInfo(ens: ENS, name: string, extra?: boolean): Promise<NameInfo>
         result.publicKey = ens.getPublicKey(name);
         result.url = ens.getText(name, 'url');
         result.email = ens.getText(name, 'email');
+        result.contentHash = ens.getContentHash(name, true);
     }
 
     if (name.match(/\.eth$/) && name.split('.').length === 2) {
@@ -254,6 +260,7 @@ function getNameInfo(ens: ENS, name: string, extra?: boolean): Promise<NameInfo>
         if (result.publicKey) { nameInfo.publicKey = result.publicKey; }
         if (result.url) { nameInfo.url = result.url; }
         if (result.email) { nameInfo.email = result.email; }
+        if (result.contentHash) { nameInfo.contentHash = result.contentHash; }
 
         if (result.auction) {
             nameInfo.startDate = result.startDate;
