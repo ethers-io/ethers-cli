@@ -438,4 +438,34 @@ class RunPlugin extends Plugin {
 }
 plugins['run'] = new RunPlugin();
 
+class WaitPlugin extends Plugin {
+    help = "HASH";
+
+    private provider: ethers.providers.Provider;
+    private hash: string;
+
+    prepare(opts: Opts): Promise<void> {
+        this.provider = opts.provider;
+
+        if (opts.args.length !== 2) {
+            throw new Error('wait requires HASH');
+        }
+
+        this.hash = opts.args[1];
+
+        return Promise.resolve(null);
+    }
+
+    async run(): Promise<void> {
+        console.log("Waiting for Transaction:", this.hash);
+        this.provider.waitForTransaction(this.hash).then((receipt) => {
+            console.log("  Block:     ", receipt.blockNumber);
+            console.log("  Block Hash:", receipt.blockHash);
+            console.log("  Status:    ", (receipt.status ? "ok": "failed"));
+        });
+
+    }
+}
+plugins['wait'] = new WaitPlugin();
+
 run(options, plugins);
