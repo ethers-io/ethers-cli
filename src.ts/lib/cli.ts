@@ -14,7 +14,8 @@ import {
     TransactionResponse
 } from 'ethers/providers';
 
-const INFINITY = 0xffffffffff;
+
+const NONCE_INFINITY = 0xffffffffff;
 
 
 class WrappedSigner extends Signer {
@@ -37,7 +38,7 @@ class WrappedSigner extends Signer {
         this._alwaysYes = !!opts.options.yes;
 
         this._opts = opts;
-        if (opts.options.nonce != INFINITY) {
+        if (opts.options.nonce != NONCE_INFINITY) {
             this._nonce = Promise.resolve(opts.options.nonce);
         }
     }
@@ -513,7 +514,7 @@ export function run(options: Options, plugins: { [command: string]: Plugin }, ar
     }
 
     if (options._transaction) {
-        options['nonce'] = integerOption(INFINITY);
+        options['nonce'] = integerOption(NONCE_INFINITY);
         options['data'] = '0x';
         options['gas-limit'] = parseUnits(null, 0);
         options['gas-price'] = parseUnits(null, 9);
@@ -691,7 +692,7 @@ export function run(options: Options, plugins: { [command: string]: Plugin }, ar
     });
 
     seq = seq.then(() => {
-        if (opts.options.nonce !== INFINITY && opts.accounts.length > 1) {
+        if (opts.options.nonce !== NONCE_INFINITY && opts.accounts.length > 1) {
             console.log('WARNING: Specifying --nonce with multiple accounts sets EVERY accounts first nonce.');
         }
         return null;
