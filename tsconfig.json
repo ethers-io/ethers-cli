@@ -21,9 +21,11 @@
     "noImplicitReturns": true,
     "noUnusedLocals": true
   },
-  "files": [
-      "./src.ts/bin/ethers.ts",
-      "./src.ts/bin/ethers-ens.ts",
+  "include": [
+      "./src.ts/*.ts",
+      "./src.ts/bin/*.ts",
+      "./src.ts/lib/*.ts",
       "./thirdparty.d.ts"
-  ]
+  ],
+  "exclude": [ ]
 }

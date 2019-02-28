@@ -1,25 +1,27 @@
 {
   "name": "ethers-cli",
-  "version": "5.0.0-beta.1",
+  "version": "5.0.0-beta.2",
   "description": "Command-Line Interface to ethers.io and ethers.space.",
   "main": "index.js",
   "scripts": {
     "build": "tsc -p ./tsconfig.json",
     "auto-build": "npm run build -- -w",
-    "dist": "npm run build",
     "test": "./node_modules/mocha/bin/mocha --timeout 6000000 tests/test-*.js"
   },
   "bin": {
     "ethers": "./bin/ethers.js",
+    "ethers-ts": "./bin/ethers-ts.js",
     "ethers-ens": "./bin/ethers-ens.js"
   },
   "dependencies": {
     "@types/node": "^10.3.2",
     "abs": "1.3.6",
-    "ethers": "^4.0.7",
-    "ethers-ens": "next",
+    "ethers": "^4.0.24",
+    "ethers-ens": "^1.0.0-beta.1",
     "ethers-ledger": "0.0.1",
-    "mime-types": "2.1.11"
+    "mime-types": "2.1.11",
+    "solc": "^0.5.2",
+    "solidity-parser-antlr": "^0.3.2"
   },
   "devDependencies": {
     "mocha": "^5.2.0",

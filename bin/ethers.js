@@ -511,4 +511,35 @@ var RunPlugin = /** @class */ (function (_super) {
     return RunPlugin;
 }(cli_1.Plugin));
 plugins['run'] = new RunPlugin();
+var WaitPlugin = /** @class */ (function (_super) {
+    __extends(WaitPlugin, _super);
+    function WaitPlugin() {
+        var _this = _super !== null && _super.apply(this, arguments) || this;
+        _this.help = "HASH";
+        return _this;
+    }
+    WaitPlugin.prototype.prepare = function (opts) {
+        this.provider = opts.provider;
+        if (opts.args.length !== 2) {
+            throw new Error('wait requires HASH');
+        }
+        this.hash = opts.args[1];
+        return Promise.resolve(null);
+    };
+    WaitPlugin.prototype.run = function () {
+        return __awaiter(this, void 0, void 0, function () {
+            return __generator(this, function (_a) {
+                console.log("Waiting for Transaction:", this.hash);
+                this.provider.waitForTransaction(this.hash).then(function (receipt) {
+                    console.log("  Block:     ", receipt.blockNumber);
+                    console.log("  Block Hash:", receipt.blockHash);
+                    console.log("  Status:    ", (receipt.status ? "ok" : "failed"));
+                });
+                return [2 /*return*/];
+            });
+        });
+    };
+    return WaitPlugin;
+}(cli_1.Plugin));
+plugins['wait'] = new WaitPlugin();
 cli_1.run(options, plugins);
